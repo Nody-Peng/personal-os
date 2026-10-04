@@ -159,3 +159,68 @@
     animation: none;
   }
 }
+
+/* BlockNote editor, blended into the page (no box, app typography). */
+.journal-editor.bn-container {
+  --bn-colors-editor-background: transparent;
+  --bn-colors-editor-text: var(--color-ink);
+  --bn-colors-side-menu: var(--color-faint);
+  --bn-colors-highlights-blue-background: var(--color-accent-soft);
+  --bn-font-family: var(--font-sans);
+  --bn-border-radius-medium: 8px;
+  --bn-border-radius-large: 12px;
+}
+.journal-editor .bn-editor {
+  padding-inline: 28px 4px;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.journal-editor .bn-default-styles {
+  font-family: var(--font-sans);
+}
+.journal-editor .bn-inline-content:has(> .ProseMirror-trailingBreak:only-child)::before {
+  color: var(--color-faint);
+}
+@media (min-width: 768px) {
+  .journal-editor .bn-editor {
+    padding-inline: 44px 8px;
+  }
+}
+
+/* Hardcover journals on the bookshelf: cloth weave + gold foil. */
+.book-cover {
+  --gold: #d2b574;
+  background-color: var(--cover);
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0 1px, transparent 1px 3px),
+    linear-gradient(100deg, rgba(255, 255, 255, 0.06), transparent 40%, rgba(0, 0, 0, 0.18));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 1px 1px rgba(17, 17, 17, 0.08),
+    0 18px 30px -12px rgba(17, 17, 17, 0.45);
+  transform-origin: left center;
+  transition: transform 500ms var(--ease-out-soft), box-shadow 500ms var(--ease-out-soft);
+}
+.book-link:hover .book-cover,
+.book-link:focus-visible .book-cover {
+  transform: perspective(1200px) rotateY(-14deg);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    14px 22px 36px -12px rgba(17, 17, 17, 0.5);
+}
+.book-spine {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.35), rgba(255, 255, 255, 0.08) 45%, rgba(0, 0, 0, 0.25));
+}
+.book-foil {
+  color: var(--gold);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.35),
+    0 -1px 0 rgba(255, 255, 255, 0.12);
+}
+@media (prefers-reduced-motion: reduce) {
+  .book-cover {
+    transition: none;
+  }
+}

@@ -1,5 +1,6 @@
 import 'server-only'
-import type { DailyLog, Idea, Setting, ToeflScore } from '@/payload-types'
+import type { DailyLog, Idea, Journal, MonthlyNote, Setting, ToeflScore, WeeklyReview } from '@/payload-types'
+import { toTaskItem, type TaskItem } from './taskItems'
 import { addDays, daysBetween } from './day'
 import type { Session } from './session'
 
@@ -114,4 +115,113 @@ export function minutesPerWeek(
     if (w >= 1 && w <= weekCount) weeks[w - 1].minutes += log.toeflMinutes ?? 0
   }
   return weeks
+}
+
+// ------------------------------------------------------------------ journal
+
+export async function getImportantTasks({ payload, user }: Session, from: string, to: string): Promise<TaskItem[]> {
+  const { docs } = await payload.find({
+    collection: 'tasks',
+    where: { and: [{ kind: { equals: 'important' } }, { day: { greater_than_equal: from } }, { day: { less_than_equal: to } }] },
+    sort: ['day', 'position', 'id'],
+    pagination: false,
+    depth: 0,
+    user,
+    overrideAccess: false,
+  })
+  return docs.map(toTaskItem)
+}
+
+export async function getWeeklyTasks({ payload, user }: Session, mondays: string[]): Promise<TaskItem[]> {
+  if (!mondays.length) return []
+  const { docs } = await payload.find({
+    collection: 'tasks',
+    where: { and: [{ kind: { equals: 'weekly' } }, { weekStart: { in: mondays } }] },
+    sort: ['weekStart', 'position', 'id'],
+    pagination: false,
+    depth: 0,
+    user,
+    overrideAccess: false,
+  })
+  return docs.map(toTaskItem)
+}
+
+/** Tasks with a period or due date that touch [from, to], of either kind. */
+export async function getDatedTasks({ payload, user }: Session, from: string, to: string): Promise<TaskItem[]> {
+  const { docs } = await payload.find({
+    collection: 'tasks',
+    where: {
+      or: [
+        { and: [{ startDate: { less_than_equal: to } }, { endDate: { greater_than_equal: from } }] },
+        { and: [{ dueDate: { greater_than_equal: from } }, { dueDate: { less_than_equal: to } }] },
+      ],
+    },
+    pagination: false,
+    depth: 0,
+    user,
+    overrideAccess: false,
+  })
+  return docs.map(toTaskItem)
+}
+
+export async function getWeekReview({ payload, user }: Session, monday: string): Promise<WeeklyReview | null> {
+  const { docs } = await payload.find({
+    collection: 'weekly-reviews',
+    where: { weekStart: { equals: monday } },
+    limit: 1,
+    depth: 0,
+    user,
+    overrideAccess: false,
+  })
+  return docs[0] ?? null
+}
+
+export async function getMonthNote({ payload, user }: Session, month: string): Promise<MonthlyNote | null> {
+  const { docs } = await payload.find({
+    collection: 'monthly-notes',
+    where: { month: { equals: month } },
+    limit: 1,
+    user,
+    overrideAccess: false,
+  })
+  return docs[0] ?? null
+}
+
+/** All journals, creating this year's book on first visit. */
+export async function getJournals({ payload, user }: Session, currentYear: number): Promise<Journal[]> {
+  const find = () =>
+    payload.find({ collection: 'journals', sort: '-year', pagination: false, user, overrideAccess: false })
+  let { docs } = await find()
+  if (!docs.some((j) => j.year === currentYear)) {
+    await payload.create({
+      collection: 'journals',
+      data: { year: currentYear, title: `${currentYear} 日記本`, coverColor: 'navy' },
+      user,
+      overrideAccess: false,
+    })
+    ;({ docs } = await find())
+  }
+  return docs
+}
+
+export async function getJournal(session: Session, year: number): Promise<Journal | null> {
+  const { docs } = await session.payload.find({
+    collection: 'journals',
+    where: { year: { equals: year } },
+    limit: 1,
+    user: session.user,
+    overrideAccess: false,
+  })
+  return docs[0] ?? null
+}
+
+/** Number of days with a daily log in `year`. */
+export async function countLoggedDays({ payload, user }: Session, year: number): Promise<number> {
+  const { totalDocs } = await payload.count({
+    collection: 'daily-logs',
+    where: { and: [{ date: { greater_than_equal: `${year}-01-01` } }, { date: { less_than_equal: `${year}-12-31` } }] },
+    user,
+    overrideAccess: false,
+  })
+  return totalDocs
 }

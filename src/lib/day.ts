@@ -78,3 +78,47 @@ export function formatDayShort(day: string): string {
   const [, m, d] = day.split('-').map(Number)
   return `${m}/${d}`
 }
+
+/** "週六" */
+export function weekdayLabel(day: string): string {
+  return WEEKDAY_LABELS[weekdayOf(day)]
+}
+
+/** "10/5–10/11" for the week starting `monday`. */
+export function formatWeekRange(monday: string): string {
+  return `${formatDayShort(monday)}–${formatDayShort(addDays(monday, 6))}`
+}
+
+/** ISO-8601 week number of the week containing `day`. */
+export function isoWeek(day: string): number {
+  const thursday = addDays(weekStart(day), 3)
+  const yearStart = `${thursday.slice(0, 4)}-01-01`
+  return Math.floor(daysBetween(yearStart, thursday) / 7) + 1
+}
+
+export const MONTH_PATTERN = /^\d{4}-\d{2}$/
+
+/** "2026-10" */
+export function monthOf(day: string): string {
+  return day.slice(0, 7)
+}
+
+export function addMonths(month: string, n: number): string {
+  const [y, m] = month.split('-').map(Number)
+  const total = y * 12 + (m - 1) + n
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+export function daysInMonth(month: string): number {
+  const [y, m] = month.split('-').map(Number)
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()
+}
+
+/** Mondays of every week that touches `month` (5 or 6 rows). */
+export function monthWeeks(month: string): string[] {
+  const first = `${month}-01`
+  const last = `${month}-${String(daysInMonth(month)).padStart(2, '0')}`
+  const weeks: string[] = []
+  for (let monday = weekStart(first); monday <= last; monday = addDays(monday, 7)) weeks.push(monday)
+  return weeks
+}

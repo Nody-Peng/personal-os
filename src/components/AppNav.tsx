@@ -1,17 +1,19 @@
 'use client'
 
-import { ChartLineUp, GearSix, Lightbulb, SunHorizon } from '@phosphor-icons/react'
+import { BookBookmark, ChartLineUp, GearSix, Lightbulb, SunHorizon } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const ITEMS = [
   { href: '/', label: '今天', Icon: SunHorizon },
+  { href: '/journal', label: '日記本', Icon: BookBookmark },
   { href: '/toefl', label: '托福', Icon: ChartLineUp },
   { href: '/ideas', label: '想學', Icon: Lightbulb },
 ] as const
 
 function isActive(pathname: string, href: string) {
-  return href === '/' ? pathname === '/' : pathname.startsWith(href)
+  if (href === '/') return pathname === '/'
+  return pathname.startsWith(href)
 }
 
 /** Top bar on desktop, bottom tab bar on phones. */
@@ -21,7 +23,7 @@ export function AppNav() {
   return (
     <>
       <header className="sticky top-0 z-20 hidden border-b border-line bg-canvas/85 backdrop-blur md:block">
-        <div className="mx-auto flex h-16 max-w-4xl items-center gap-8 px-6">
+        <div className="mx-auto flex h-16 max-w-5xl items-center gap-8 px-6">
           <Link href="/" className="font-mono text-sm font-semibold tracking-tight text-ink-strong">
             Personal OS
           </Link>
@@ -59,7 +61,7 @@ export function AppNav() {
         aria-label="主要頁面"
         className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
       >
-        <ul className="grid grid-cols-3">
+        <ul className="grid grid-cols-4">
           {ITEMS.map(({ href, label, Icon }) => {
             const active = isActive(pathname, href)
             return (

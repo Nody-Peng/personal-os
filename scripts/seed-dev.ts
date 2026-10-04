@@ -43,9 +43,50 @@ if (process.argv.includes('--demo')) {
         toeflMinutes: minutes[i % minutes.length],
         toeflSkills: [i % 2 ? 'writing' : 'speaking'],
         energy: 3 + (i % 3 === 0 ? 1 : 0),
-        tomorrowTop1: i === days.length - 1 ? '做完 ETS 官方模擬考並記下分數' : '',
+        morningPlan: '07:20 聽英文 podcast',
+        noonPlan: '12:30 通話、Anki 15 分鐘',
+        eveningPlan: i % 2 === 0 ? '健身 → 22:00 托福口說' : '22:00 托福寫作',
+        note: [{ type: 'paragraph', content: '示範筆記：今天口說卡在第二題，明天先練回答架構。' }],
       },
     })
+  }
+
+  const tasks = await payload.count({ collection: 'tasks' })
+  if (!tasks.totalDocs) {
+    const important = (day: string, title: string, position: number, extra: Record<string, unknown> = {}) =>
+      payload.create({ collection: 'tasks', data: { kind: 'important', day, title, position, status: 'todo', ...extra } })
+    for (const [i, date] of days.entries()) {
+      await important(date, i % 2 ? '寫作練習一篇 Email' : '口說 Interview 三題', 0, { status: 'done' })
+      if (i % 3 === 0) await important(date, '整理錯誤紀錄', 1, { status: i === 0 ? 'done' : 'todo' })
+    }
+    await important(today, '做完 ETS 官方模擬考並記下分數', 0, {
+      body: [
+        { type: 'heading', content: '模擬考流程' },
+        { type: 'checkListItem', content: '閱讀、聽力一次考完' },
+        { type: 'checkListItem', content: '口說錄音給 AI 打分' },
+      ],
+    })
+    await important(today, '報名托福考試', 1, { dueDate: addDays(today, 3) })
+    await important(addDays(today, 1), '口說 Listen and Repeat 7 句', 0)
+    await payload.create({
+      collection: 'tasks',
+      data: {
+        kind: 'important',
+        day: addDays(today, 2),
+        title: '托福口說衝刺週',
+        position: 0,
+        status: 'todo',
+        startDate: addDays(today, 2),
+        endDate: addDays(today, 8),
+      },
+    })
+    const weekly = ['建立 Supabase 備份', '關閉 Supabase Data API', '週日統整：選下週主題']
+    for (const [position, title] of weekly.entries()) {
+      await payload.create({
+        collection: 'tasks',
+        data: { kind: 'weekly', weekStart: monday, title, position, status: position === 1 ? 'done' : 'todo', dueDate: position === 2 ? addDays(monday, 6) : undefined },
+      })
+    }
   }
 
   const scores = await payload.count({ collection: 'toefl-scores' })

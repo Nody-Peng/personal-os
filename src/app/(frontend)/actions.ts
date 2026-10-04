@@ -10,15 +10,11 @@ import {
   type IdeaStatus,
   type ToeflSkill,
 } from '@/lib/options'
+import { clampInt, cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
 import { requireActionSession } from '@/lib/session'
 import { SECTIONS, isBand, type Section } from '@/lib/toefl'
 
-export type ActionResult = { ok: true } | { ok: false; error: string }
-
-const fail = (error: unknown): ActionResult => ({
-  ok: false,
-  error: error instanceof Error ? error.message : '發生錯誤，請再試一次',
-})
+export type { ActionResult }
 
 const values = <T extends { value: string }>(options: readonly T[]) =>
   new Set(options.map((o) => o.value))
@@ -26,9 +22,6 @@ const TOEFL_SKILL_VALUES = values(TOEFL_SKILLS)
 const IDEA_STATUS_VALUES = values(IDEA_STATUSES)
 const SCORE_TYPE_VALUES = values(SCORE_TYPES)
 const SCORE_SOURCE_VALUES = values(SCORE_SOURCES)
-
-const clampInt = (n: unknown, min: number, max: number) =>
-  Math.min(max, Math.max(min, Math.round(Number(n) || 0)))
 
 // ---------------------------------------------------------------- daily logs
 
@@ -39,8 +32,10 @@ export type DailyLogPatch = Partial<{
   toeflSkills: ToeflSkill[]
   themeMinutes: number
   energy: number | null
-  notes: string
-  tomorrowTop1: string
+  morningPlan: string
+  noonPlan: string
+  eveningPlan: string
+  note: unknown[] | null
 }>
 
 /** Keeps only known fields with sane values; the client is never trusted. */
@@ -53,8 +48,10 @@ function cleanLogPatch(patch: DailyLogPatch): DailyLogPatch {
   if ('toeflSkills' in patch)
     out.toeflSkills = (patch.toeflSkills ?? []).filter((s) => TOEFL_SKILL_VALUES.has(s))
   if ('energy' in patch) out.energy = patch.energy == null ? null : clampInt(patch.energy, 1, 5)
-  if ('notes' in patch) out.notes = String(patch.notes ?? '').slice(0, 2000)
-  if ('tomorrowTop1' in patch) out.tomorrowTop1 = String(patch.tomorrowTop1 ?? '').slice(0, 200)
+  if ('morningPlan' in patch) out.morningPlan = cleanText(patch.morningPlan, 2000)
+  if ('noonPlan' in patch) out.noonPlan = cleanText(patch.noonPlan, 2000)
+  if ('eveningPlan' in patch) out.eveningPlan = cleanText(patch.eveningPlan, 2000)
+  if ('note' in patch) out.note = cleanBlocks(patch.note)
   return out
 }
 

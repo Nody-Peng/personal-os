@@ -65,6 +65,33 @@ describe('ideas', () => {
     }
   })
 
+  it('allows at most three IMPORTANT items per day, not counting migrated ones', async () => {
+    const day = '2031-01-01'
+    const ids: number[] = []
+    try {
+      for (const title of ['A', 'B', 'C']) {
+        ids.push((await payload.create({ collection: 'tasks', data: { kind: 'important', day, title, status: 'todo' } })).id)
+      }
+      await expect(
+        payload.create({ collection: 'tasks', data: { kind: 'important', day, title: 'D', status: 'todo' } }),
+      ).rejects.toThrow(/3 件 Important/)
+
+      // A migrated item frees its slot.
+      await payload.update({ collection: 'tasks', id: ids[0], data: { status: 'migrated' } })
+      ids.push((await payload.create({ collection: 'tasks', data: { kind: 'important', day, title: 'D', status: 'todo' } })).id)
+    } finally {
+      for (const id of ids) await payload.delete({ collection: 'tasks', id })
+    }
+  })
+
+  it('requires a complete, ordered period on tasks', async () => {
+    const base = { kind: 'weekly' as const, weekStart: '2031-01-06', title: 'period', status: 'todo' as const }
+    await expect(payload.create({ collection: 'tasks', data: { ...base, startDate: '2031-01-07' } })).rejects.toThrow(/同時設定/)
+    await expect(
+      payload.create({ collection: 'tasks', data: { ...base, startDate: '2031-01-09', endDate: '2031-01-07' } }),
+    ).rejects.toThrow(/不能晚於/)
+  })
+
   it('blocks anonymous access when access control is enforced', async () => {
     await expect(
       payload.find({ collection: 'daily-logs', overrideAccess: false }),

@@ -1,0 +1,101 @@
+'use client'
+
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { saveDailyLog, type DailyLogPatch } from '@/app/(frontend)/actions'
+import type { ToeflSkill } from '@/lib/options'
+import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
+
+export type DayLog = {
+  morningListening: boolean
+  gym: boolean
+  toeflMinutes: number
+  toeflSkills: ToeflSkill[]
+  themeMinutes: number
+  energy: number | null
+  morningPlan: string
+  noonPlan: string
+  eveningPlan: string
+}
+
+export const EMPTY_LOG: DayLog = {
+  morningListening: false,
+  gym: false,
+  toeflMinutes: 0,
+  toeflSkills: [],
+  themeMinutes: 0,
+  energy: null,
+  morningPlan: '',
+  noonPlan: '',
+  eveningPlan: '',
+}
+
+type TextField = 'morningPlan' | 'noonPlan' | 'eveningPlan'
+
+type DayLogContext = {
+  day: string
+  log: DayLog
+  /** Taps: update now and save immediately. */
+  commit: (patch: Partial<DayLog>) => void
+  /** Typing: update now, save after a pause (or on blur via flush). */
+  editText: (patch: Partial<Pick<DayLog, TextField>>) => void
+  flush: () => void
+  status: SaveStatus
+  error: string | null
+  savedAt: Date | null
+}
+
+const Ctx = createContext<DayLogContext | null>(null)
+const TEXT_SAVE_DELAY = 800
+
+/** One day's log: shared state plus a serial save queue for every section. */
+export function DayLogProvider({ day, initial, children }: { day: string; initial: DayLog; children: React.ReactNode }) {
+  const [log, setLog] = useState(initial)
+  const { enqueue, status, error, savedAt } = useSaveQueue()
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingText = useRef<DailyLogPatch>({})
+
+  const commit = useCallback(
+    (patch: Partial<DayLog>) => {
+      setLog((prev) => ({ ...prev, ...patch }))
+      enqueue(() => saveDailyLog(day, patch))
+    },
+    [day, enqueue],
+  )
+
+  const flush = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    const patch = pendingText.current
+    pendingText.current = {}
+    if (Object.keys(patch).length) enqueue(() => saveDailyLog(day, patch))
+  }, [day, enqueue])
+
+  const editText = useCallback(
+    (patch: Partial<Pick<DayLog, TextField>>) => {
+      setLog((prev) => ({ ...prev, ...patch }))
+      pendingText.current = { ...pendingText.current, ...patch }
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(flush, TEXT_SAVE_DELAY)
+    },
+    [flush],
+  )
+
+  useEffect(() => {
+    const onHide = () => document.visibilityState === 'hidden' && flush()
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      flush()
+    }
+  }, [flush])
+
+  return (
+    <Ctx.Provider value={{ day, log, commit, editText, flush, status, error, savedAt }}>{children}</Ctx.Provider>
+  )
+}
+
+export function useDayLog(): DayLogContext {
+  const ctx = useContext(Ctx)
+  if (!ctx) throw new Error('useDayLog must be used inside DayLogProvider')
+  return ctx
+}
