@@ -42,8 +42,9 @@ export async function getNotebook({ payload, user }: Session, id: number): Promi
 export async function getPageTree({ payload, user }: Session, notebookId: number): Promise<PageNode[]> {
   const { docs } = await payload.find({
     collection: 'note-pages',
-    where: { notebook: { equals: notebookId } },
-    select: { title: true, icon: true, parent: true, position: true },
+    // Board items live on their board, not in the sidebar.
+    where: { and: [{ notebook: { equals: notebookId } }, { kind: { not_equals: 'item' } }] },
+    select: { title: true, icon: true, parent: true, position: true, kind: true },
     sort: ['position', 'id'],
     depth: 0,
     pagination: false,

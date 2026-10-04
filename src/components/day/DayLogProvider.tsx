@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { saveDailyLog, type DailyLogPatch } from '@/app/(frontend)/actions'
+import type { PlanItem } from '@/lib/dayParts'
 import type { ToeflSkill } from '@/lib/options'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 
@@ -11,9 +12,9 @@ export type DayLog = {
   toeflSkills: ToeflSkill[]
   themeMinutes: number
   energy: number | null
-  morningPlan: string
-  noonPlan: string
-  eveningPlan: string
+  morningItems: PlanItem[]
+  noonItems: PlanItem[]
+  eveningItems: PlanItem[]
 }
 
 export const EMPTY_LOG: DayLog = {
@@ -22,12 +23,12 @@ export const EMPTY_LOG: DayLog = {
   toeflSkills: [],
   themeMinutes: 0,
   energy: null,
-  morningPlan: '',
-  noonPlan: '',
-  eveningPlan: '',
+  morningItems: [],
+  noonItems: [],
+  eveningItems: [],
 }
 
-type TextField = 'morningPlan' | 'noonPlan' | 'eveningPlan'
+type TextField = 'morningItems' | 'noonItems' | 'eveningItems'
 
 type DayLogContext = {
   day: string
@@ -55,6 +56,8 @@ export function DayLogProvider({ day, initial, children }: { day: string; initia
   const commit = useCallback(
     (patch: Partial<DayLog>) => {
       setLog((prev) => ({ ...prev, ...patch }))
+      // This save supersedes any typing still waiting for the same fields.
+      for (const key of Object.keys(patch)) delete pendingText.current[key as keyof DailyLogPatch]
       enqueue(() => saveDailyLog(day, patch))
     },
     [day, enqueue],

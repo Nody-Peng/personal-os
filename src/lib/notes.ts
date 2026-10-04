@@ -1,5 +1,7 @@
 // Notebook limits and the tree shape shared by server and client.
 
+import type { ItemStatus, PageKind } from './options'
+
 export const MAX_NOTEBOOK_TITLE = 60
 export const MAX_PAGE_TITLE = 200
 export const MAX_ICON_LENGTH = 16
@@ -18,6 +20,7 @@ export type PageNode = {
   title: string
   icon: string
   position: number
+  kind: PageKind
 }
 
 export type NotebookItem = {
@@ -32,14 +35,95 @@ export type NotebookItem = {
 const idOf = (value: unknown): number | null =>
   value == null ? null : typeof value === 'number' ? value : (value as { id: number }).id
 
-export function toPageNode(doc: { id: number; parent?: unknown; title?: string | null; icon?: string | null; position?: number | null }): PageNode {
+export function toPageNode(doc: {
+  id: number
+  parent?: unknown
+  title?: string | null
+  icon?: string | null
+  position?: number | null
+  kind?: string | null
+}): PageNode {
   return {
     id: doc.id,
     parent: idOf(doc.parent),
     title: doc.title ?? '',
     icon: doc.icon ?? '',
     position: doc.position ?? 0,
+    kind: (doc.kind as PageKind | null) ?? 'page',
   }
+}
+
+/** A card on a board (a note page with kind `item`). */
+export type BoardItem = {
+  id: number
+  title: string
+  icon: string
+  status: ItemStatus
+  position: number
+  startDate: string | null
+  endDate: string | null
+  parentItem: number | null
+}
+
+export function toBoardItem(doc: {
+  id: number
+  title?: string | null
+  icon?: string | null
+  status?: string | null
+  position?: number | null
+  startDate?: string | null
+  endDate?: string | null
+  parentItem?: unknown
+}): BoardItem {
+  return {
+    id: doc.id,
+    title: doc.title ?? '',
+    icon: doc.icon ?? '',
+    status: (doc.status as ItemStatus | null) ?? 'todo',
+    position: doc.position ?? 0,
+    startDate: doc.startDate ?? null,
+    endDate: doc.endDate ?? null,
+    parentItem: idOf(doc.parentItem),
+  }
+}
+
+/** Items of one board column, in order. */
+export function columnOf(items: BoardItem[], status: ItemStatus): BoardItem[] {
+  return items.filter((i) => i.status === status).sort((a, b) => a.position - b.position || a.id - b.id)
+}
+
+/**
+ * The board after moving an item into `status` at `index` (both affected
+ * columns renumbered 0..n-1).
+ */
+export function applyItemMove(items: BoardItem[], id: number, status: ItemStatus, index: number): BoardItem[] {
+  const self = items.find((i) => i.id === id)
+  if (!self) throw new Error('找不到這個項目')
+  const column = columnOf(items, status).filter((i) => i.id !== id)
+  column.splice(Math.max(0, Math.min(column.length, Math.round(index) || 0)), 0, self)
+  const next = new Map<number, Pick<BoardItem, 'status' | 'position'>>()
+  column.forEach((i, position) => next.set(i.id, { status, position }))
+  if (self.status !== status) {
+    columnOf(items, self.status)
+      .filter((i) => i.id !== id)
+      .forEach((i, position) => next.set(i.id, { status: self.status, position }))
+  }
+  return items.map((i) => (next.has(i.id) ? { ...i, ...next.get(i.id)! } : i))
+}
+
+/** Items that may become `id`'s 上級項目 (not itself, nor anything under it). */
+export function parentCandidates(items: BoardItem[], id: number): BoardItem[] {
+  const below = new Set([id])
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const i of items) {
+      if (i.parentItem != null && below.has(i.parentItem) && !below.has(i.id)) {
+        below.add(i.id)
+        grew = true
+      }
+    }
+  }
+  return items.filter((i) => !below.has(i.id))
 }
 
 /** Children of `parent`, in order. */
@@ -108,4 +192,22 @@ export function applyMove(pages: PageNode[], id: number, parent: number | null, 
 /** Pages in display order with their depth (for pickers and the trash). */
 export function flattenTree(pages: PageNode[], parent: number | null = null, depth = 0): { page: PageNode; depth: number }[] {
   return childrenOf(pages, parent).flatMap((page) => [{ page, depth }, ...flattenTree(pages, page.id, depth + 1)])
+}
+
+/** Pages shown inside a document (sub-page and board blocks), anywhere in the tree of blocks. */
+export function embeddedPageIds(blocks: unknown): Set<number> {
+  const ids = new Set<number>()
+  const walk = (list: unknown) => {
+    if (!Array.isArray(list)) return
+    for (const b of list) {
+      if (!b || typeof b !== 'object') continue
+      const block = b as { type?: string; props?: { pageId?: unknown; boardId?: unknown; mode?: unknown }; children?: unknown }
+      if (block.type === 'pageLink' && block.props?.mode !== 'link') ids.add(Number(block.props?.pageId))
+      if (block.type === 'board') ids.add(Number(block.props?.boardId))
+      walk(block.children)
+    }
+  }
+  walk(blocks)
+  ids.delete(0)
+  return ids
 }

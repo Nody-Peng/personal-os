@@ -46,10 +46,11 @@ type Props = {
   /** Sees every change as it happens (before the debounced save). */
   onChange?: (blocks: unknown[]) => void
   className?: string
+  allowUploads?: boolean
 }
 
 /** Notion-style editor that autosaves a second after typing stops. */
-export function BlockEditor({ target, initial, placeholder = '輸入文字，或按 / 插入區塊', onStatus, onChange: onEdit, className }: Props) {
+export function BlockEditor({ target, initial, placeholder = '輸入文字，或按 / 插入區塊', onStatus, onChange: onEdit, className, allowUploads }: Props) {
   const { enqueue, status, error } = useSaveQueue()
   const pending = useRef<unknown[] | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -97,7 +98,7 @@ export function BlockEditor({ target, initial, placeholder = '輸入文字，或
 
   return (
     <div className="-mx-1">
-      <Inner initial={initial} placeholder={placeholder} onChange={onChange} className={className} />
+      <Inner initial={initial} placeholder={placeholder} onChange={onChange} className={className} allowUploads={allowUploads} />
     </div>
   )
 }

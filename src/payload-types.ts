@@ -75,6 +75,7 @@ export interface Config {
     journals: Journal;
     notebooks: Notebook;
     'note-pages': NotePage;
+    media: Media;
     'toefl-scores': ToeflScore;
     ideas: Idea;
     users: User;
@@ -93,6 +94,7 @@ export interface Config {
     journals: JournalsSelect<false> | JournalsSelect<true>;
     notebooks: NotebooksSelect<false> | NotebooksSelect<true>;
     'note-pages': NotePagesSelect<false> | NotePagesSelect<true>;
+    media: MediaSelect<false> | MediaSelect<true>;
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
@@ -154,9 +156,33 @@ export interface DailyLog {
   toeflSkills?: ('speaking' | 'writing' | 'reading' | 'listening' | 'vocab')[] | null;
   themeMinutes?: number | null;
   energy?: number | null;
-  morningPlan?: string | null;
-  noonPlan?: string | null;
-  eveningPlan?: string | null;
+  morningItems?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  noonItems?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  eveningItems?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   /**
    * Notion 式編輯器的區塊資料（在前台編輯）
    */
@@ -351,6 +377,22 @@ export interface NotePage {
   notebook: number | Notebook;
   parent?: (number | null) | NotePage;
   position?: number | null;
+  kind?: ('page' | 'board' | 'item') | null;
+  status?: ('todo' | 'doing' | 'done' | 'archived') | null;
+  parentItem?: (number | null) | NotePage;
+  /**
+   * YYYY-MM-DD
+   */
+  startDate?: string | null;
+  /**
+   * YYYY-MM-DD
+   */
+  endDate?: string | null;
+  /**
+   * /api/media/file/… 的網址
+   */
+  cover?: string | null;
+  coverPosition?: number | null;
   /**
    * Notion 式編輯器的區塊資料（在前台編輯）
    */
@@ -371,6 +413,27 @@ export interface NotePage {
   updatedAt: string;
   createdAt: string;
   deletedAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "media".
+ */
+export interface Media {
+  id: number;
+  alt?: string | null;
+  prefix?: string | null;
+  _objectKey?: string | null;
+  updatedAt: string;
+  createdAt: string;
+  url?: string | null;
+  thumbnailURL?: string | null;
+  filename?: string | null;
+  mimeType?: string | null;
+  filesize?: number | null;
+  width?: number | null;
+  height?: number | null;
+  focalX?: number | null;
+  focalY?: number | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -479,6 +542,10 @@ export interface PayloadLockedDocument {
         value: number | NotePage;
       } | null)
     | ({
+        relationTo: 'media';
+        value: number | Media;
+      } | null)
+    | ({
         relationTo: 'toefl-scores';
         value: number | ToeflScore;
       } | null)
@@ -543,9 +610,9 @@ export interface DailyLogsSelect<T extends boolean = true> {
   toeflSkills?: T;
   themeMinutes?: T;
   energy?: T;
-  morningPlan?: T;
-  noonPlan?: T;
-  eveningPlan?: T;
+  morningItems?: T;
+  noonItems?: T;
+  eveningItems?: T;
   note?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -640,12 +707,39 @@ export interface NotePagesSelect<T extends boolean = true> {
   notebook?: T;
   parent?: T;
   position?: T;
+  kind?: T;
+  status?: T;
+  parentItem?: T;
+  startDate?: T;
+  endDate?: T;
+  cover?: T;
+  coverPosition?: T;
   content?: T;
   plainText?: T;
   editedAt?: T;
   updatedAt?: T;
   createdAt?: T;
   deletedAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "media_select".
+ */
+export interface MediaSelect<T extends boolean = true> {
+  alt?: T;
+  prefix?: T;
+  _objectKey?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  url?: T;
+  thumbnailURL?: T;
+  filename?: T;
+  mimeType?: T;
+  filesize?: T;
+  width?: T;
+  height?: T;
+  focalX?: T;
+  focalY?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

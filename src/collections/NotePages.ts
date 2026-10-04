@@ -1,7 +1,11 @@
 import type { CollectionConfig } from 'payload'
 import { authenticated } from '@/access/authenticated'
 import { blocksToText } from '@/lib/blocks'
+import { DAY_PATTERN } from '@/lib/day'
 import { MAX_ICON_LENGTH, MAX_PAGE_TITLE } from '@/lib/notes'
+import { ITEM_STATUSES, PAGE_KINDS, selectOptions } from '@/lib/options'
+
+const optionalDay = (value: string | null | undefined) => !value || DAY_PATTERN.test(value) || '請用 YYYY-MM-DD 格式'
 
 const idOf = (value: unknown): number | null =>
   value == null ? null : typeof value === 'object' ? ((value as { id?: number }).id ?? null) : Number(value)
@@ -40,6 +44,28 @@ export const NotePages: CollectionConfig = {
       ],
     },
     {
+      type: 'row',
+      fields: [
+        { name: 'kind', label: '類型', type: 'select', defaultValue: 'page', index: true, options: selectOptions(PAGE_KINDS) },
+        { name: 'status', label: '狀態（看板項目）', type: 'select', options: selectOptions(ITEM_STATUSES) },
+        { name: 'parentItem', label: '上級項目', type: 'relationship', relationTo: 'note-pages', index: true },
+      ],
+    },
+    {
+      type: 'row',
+      fields: [
+        { name: 'startDate', label: '日期（開始）', type: 'text', validate: optionalDay, admin: { description: 'YYYY-MM-DD' } },
+        { name: 'endDate', label: '日期（結束）', type: 'text', validate: optionalDay, admin: { description: 'YYYY-MM-DD' } },
+      ],
+    },
+    {
+      type: 'row',
+      fields: [
+        { name: 'cover', label: '封面圖片', type: 'text', admin: { description: '/api/media/file/… 的網址' } },
+        { name: 'coverPosition', label: '封面垂直位置', type: 'number', min: 0, max: 100, defaultValue: 50 },
+      ],
+    },
+    {
       name: 'content',
       label: '內容',
       type: 'json',
@@ -63,6 +89,28 @@ export const NotePages: CollectionConfig = {
     beforeChange: [
       async ({ data, originalDoc, operation, req }) => {
         if ('content' in data) data.plainText = blocksToText(data.content)
+
+        // 上級項目: another item on the same board, without loops.
+        const parentItemId = idOf({ ...originalDoc, ...data }.parentItem)
+        if (parentItemId != null && parentItemId !== idOf(originalDoc?.parentItem)) {
+          const boardId = idOf({ ...originalDoc, ...data }.parent)
+          let current: number | null = parentItemId
+          for (let depth = 0; current != null; depth++) {
+            if (current === idOf(originalDoc?.id) || depth > 200) throw new Error('上級項目不能是自己或自己的子項目')
+            const item = await req.payload.findByID({
+              collection: 'note-pages',
+              id: current,
+              depth: 0,
+              trash: true,
+              select: { kind: true, parent: true, parentItem: true },
+              req,
+            })
+            if (depth === 0 && (item.kind !== 'item' || idOf(item.parent) !== boardId)) {
+              throw new Error('上級項目必須是同一個看板裡的其他項目')
+            }
+            current = idOf(item.parentItem)
+          }
+        }
 
         // A parent must be in the same notebook and must not be the page
         // itself or one of its descendants. Autosaves leave both alone.

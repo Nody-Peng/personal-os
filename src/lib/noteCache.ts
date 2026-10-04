@@ -17,7 +17,7 @@ function isFresh(key: string, renderedAt: number): boolean {
   return true
 }
 
-export type PageEdits = { title?: string; icon?: string; content?: unknown[] | null }
+export type PageEdits = { title?: string; icon?: string; content?: unknown[] | null; cover?: string; coverPosition?: number }
 const pageEdits = new Map<number, PageEdits>()
 const trees = new Map<number, PageNode[]>()
 

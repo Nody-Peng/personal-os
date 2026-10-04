@@ -1,10 +1,13 @@
 'use client'
 
-import { useParams, usePathname, useRouter } from 'next/navigation'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { createPage, movePage, trashPage } from '@/app/(frontend)/notebook-actions'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createBoard, createPage, movePage, trashPage } from '@/app/(frontend)/notebook-actions'
+import type { NoteEditorContext } from '@/components/editor/NoteContext'
+import { dropItems } from '@/lib/boardStore'
 import { rememberTree, treeWithEdits } from '@/lib/noteCache'
 import { ancestorsOf, applyMove, childrenOf, subtreeIds, type NotebookItem, type PageNode } from '@/lib/notes'
+import { ItemPeek } from './board/ItemPeek'
 import { MoveDialog } from './MoveDialog'
 import { NotebookDialog } from './NotebookDialog'
 import { NoteSearch, useSearchShortcut } from './NoteSearch'
@@ -19,9 +22,14 @@ type NotebookContextValue = {
   toggle: (id: number, open?: boolean) => void
   addPage: (parent: number | null) => void
   patchPage: (id: number, patch: Partial<Pick<PageNode, 'title' | 'icon'>>) => void
-  trash: (id: number) => void
+  /** `parentHint`: where to go if the page isn't in the tree (board cards). */
+  trash: (id: number, parentHint?: number | null) => void
   move: (id: number, parent: number | null, index: number) => void
+  /** Pages that appeared elsewhere (restored from the trash, created in the text). */
   restored: (pages: PageNode[]) => void
+  /** A page beside the current one (board cards): ?peek=<id>. */
+  openPeek: (id: number) => void
+  notify: (error: string) => void
   openDrawer: () => void
   openSearch: () => void
   openTrash: () => void
@@ -30,6 +38,38 @@ type NotebookContextValue = {
 }
 
 const NotebookContext = createContext<NotebookContextValue | null>(null)
+
+/** Context for notebook-aware editor blocks inside page `pageId`. */
+export function useNoteEditorContext(pageId: number): NoteEditorContext {
+  const { notebook, pages, restored, openPeek, notify } = useNotebook()
+  return useMemo(
+    () => ({
+      notebookId: notebook.id,
+      pageId,
+      pages,
+      openPeek,
+      createChildPage: async () => {
+        const result = await createPage(notebook.id, pageId)
+        if (!result.ok || !result.data) {
+          notify(result.ok ? '新增頁面失敗' : result.error)
+          return null
+        }
+        restored([result.data])
+        return result.data
+      },
+      createBoard: async () => {
+        const result = await createBoard(pageId)
+        if (!result.ok || !result.data) {
+          notify(result.ok ? '新增看板失敗' : result.error)
+          return null
+        }
+        restored([result.data])
+        return result.data
+      },
+    }),
+    [notebook.id, pageId, pages, restored, openPeek, notify],
+  )
+}
 
 export function useNotebook(): NotebookContextValue {
   const value = useContext(NotebookContext)
@@ -135,6 +175,15 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
 
   useSearchShortcut(() => setDialog('search'))
 
+  // Uploads and blocks deep inside the editor report errors through an event.
+  useEffect(() => {
+    const onError = (e: Event) => setError(String((e as CustomEvent<string>).detail))
+    window.addEventListener('notes:error', onError)
+    return () => window.removeEventListener('notes:error', onError)
+  }, [])
+
+  const openPeek = useCallback((id: number) => router.push(`${pathname}?peek=${id}`, { scroll: false }), [router, pathname])
+
   const addPage = useCallback(
     async (parent: number | null) => {
       const result = await createPage(initialNotebook.id, parent)
@@ -154,20 +203,23 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
   )
 
   const trash = useCallback(
-    async (id: number) => {
+    async (id: number, parentHint: number | null = null) => {
       const before = pagesRef.current
       const removed = new Set(subtreeIds(before, id))
       const page = before.find((p) => p.id === id)
       setPages((prev) => prev.filter((p) => !removed.has(p.id)))
       if (currentId != null && removed.has(currentId)) {
         const rest = before.filter((p) => !removed.has(p.id))
-        const next = (page?.parent != null && rest.find((p) => p.id === page.parent)) || childrenOf(rest, null)[0]
+        const parent = page ? page.parent : parentHint
+        const next = (parent != null && rest.find((p) => p.id === parent)) || childrenOf(rest, null)[0]
         router.replace(next ? urlOf(initialNotebook.id, next.id) : `/notebooks/${initialNotebook.id}`)
       }
       const result = await trashPage(id)
       if (!result.ok) {
         setPages(() => before)
         setError(result.error)
+      } else if (parentHint != null) {
+        dropItems(parentHint, result.data ?? [id])
       }
     },
     [currentId, initialNotebook.id, router, setPages],
@@ -211,13 +263,15 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
       trash,
       move,
       restored,
+      openPeek,
+      notify: setError,
       openDrawer: () => setDrawerAt(pathname),
       openSearch: () => setDialog('search'),
       openTrash: () => setDialog('trash'),
       openSettings: () => setDialog('settings'),
       openMove: (id: number) => setDialog({ move: id }),
     }),
-    [notebook, pages, currentId, expanded, toggle, addPage, patchPage, trash, move, restored, pathname],
+    [notebook, pages, currentId, expanded, toggle, addPage, patchPage, trash, move, restored, openPeek, pathname],
   )
 
   return (
@@ -254,6 +308,17 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
         <NotebookDialog notebook={notebook} onClose={() => setDialog(null)} onSaved={(n) => setNotebook(n)} />
       )}
       {dialog && typeof dialog === 'object' && <MoveDialog pageId={dialog.move} onClose={() => setDialog(null)} />}
+      <Suspense>
+        <PeekFromUrl />
+      </Suspense>
     </NotebookContext.Provider>
   )
+}
+
+function PeekFromUrl() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const id = Number(useSearchParams().get('peek'))
+  if (!Number.isInteger(id) || id <= 0) return null
+  return <ItemPeek key={id} id={id} onClose={() => router.push(pathname, { scroll: false })} />
 }

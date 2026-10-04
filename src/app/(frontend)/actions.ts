@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { DAY_PATTERN } from '@/lib/day'
+import { cleanPlanItems, type PlanItem } from '@/lib/dayParts'
 import {
   IDEA_STATUSES,
   SCORE_SOURCES,
@@ -10,7 +11,7 @@ import {
   type IdeaStatus,
   type ToeflSkill,
 } from '@/lib/options'
-import { clampInt, cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
+import { clampInt, cleanBlocks, fail, type ActionResult } from '@/lib/actionUtils'
 import { requireActionSession } from '@/lib/session'
 import { SECTIONS, isBand, type Section } from '@/lib/toefl'
 import { currentMonday, storedWeekThemeId, writeWeekTheme } from '@/lib/weekThemes'
@@ -32,9 +33,9 @@ export type DailyLogPatch = Partial<{
   toeflSkills: ToeflSkill[]
   themeMinutes: number
   energy: number | null
-  morningPlan: string
-  noonPlan: string
-  eveningPlan: string
+  morningItems: PlanItem[]
+  noonItems: PlanItem[]
+  eveningItems: PlanItem[]
   note: unknown[] | null
 }>
 
@@ -49,9 +50,9 @@ function cleanLogPatch(patch: DailyLogPatch): DailyLogPatch {
   if ('toeflSkills' in patch)
     out.toeflSkills = (patch.toeflSkills ?? []).filter((s) => TOEFL_SKILL_VALUES.has(s))
   if ('energy' in patch) out.energy = patch.energy == null ? null : clampInt(patch.energy, 1, 5)
-  if ('morningPlan' in patch) out.morningPlan = cleanText(patch.morningPlan, 2000)
-  if ('noonPlan' in patch) out.noonPlan = cleanText(patch.noonPlan, 2000)
-  if ('eveningPlan' in patch) out.eveningPlan = cleanText(patch.eveningPlan, 2000)
+  if ('morningItems' in patch) out.morningItems = cleanPlanItems(patch.morningItems)
+  if ('noonItems' in patch) out.noonItems = cleanPlanItems(patch.noonItems)
+  if ('eveningItems' in patch) out.eveningItems = cleanPlanItems(patch.eveningItems)
   if ('note' in patch) out.note = cleanBlocks(patch.note)
   return out
 }

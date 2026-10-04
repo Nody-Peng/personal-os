@@ -2,14 +2,20 @@
 
 import { revalidatePath } from 'next/cache'
 import type { Where } from 'payload'
-import { cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
+import { clampInt, cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
+import { DAY_PATTERN } from '@/lib/day'
 import {
   MAX_ICON_LENGTH,
   MAX_NOTEBOOK_TITLE,
   MAX_PAGE_TITLE,
   TRASH_DAYS,
+  applyItemMove,
   applyMove,
   childrenOf,
+  columnOf,
+  parentCandidates,
+  toBoardItem,
+  type BoardItem,
   snippetAround,
   subtreeIds,
   toPageNode,
@@ -17,7 +23,7 @@ import {
   type PageNode,
 } from '@/lib/notes'
 import { toNotebookItem } from '@/lib/notebookQueries'
-import { COVER_COLORS, COVER_PATTERNS, type CoverColor, type CoverPattern } from '@/lib/options'
+import { COVER_COLORS, COVER_PATTERNS, ITEM_STATUSES, type CoverColor, type CoverPattern, type ItemStatus } from '@/lib/options'
 import { requireActionSession, type Session } from '@/lib/session'
 
 // The shelf shows page counts; the notebook view keeps its own tree state.
@@ -63,7 +69,7 @@ async function treeOf({ payload, user }: Session, notebookId: number, withTrash 
   const { docs } = await payload.find({
     collection: 'note-pages',
     where: { notebook: { equals: notebookId } },
-    select: { title: true, icon: true, parent: true, position: true, deletedAt: true },
+    select: { title: true, icon: true, parent: true, position: true, kind: true, deletedAt: true },
     depth: 0,
     pagination: false,
     trash: withTrash,
@@ -158,15 +164,32 @@ export async function createPage(notebookId: number, parentId: number | null): P
   }
 }
 
-export type PagePatch = Partial<{ title: string; icon: string; content: unknown[] | null }>
+export type PagePatch = Partial<{ title: string; icon: string; content: unknown[] | null; cover: string; coverPosition: number }>
+
+/** Covers are our own uploads only (served, with the login check, by Payload). */
+function cleanCover(value: unknown): string {
+  const url = String(value ?? '').trim()
+  if (!url) return ''
+  if (url.length > 300 || !url.startsWith('/api/media/file/') || url.includes('..')) throw new Error('封面圖片網址錯誤')
+  return url
+}
 
 export async function updatePage(id: number, patch: PagePatch): Promise<ActionResult> {
   try {
     const { payload, user } = await requireActionSession()
-    const data: { title?: string; icon?: string; content?: unknown[] | null; editedAt?: string } = {}
+    const data: {
+      title?: string
+      icon?: string
+      content?: unknown[] | null
+      cover?: string
+      coverPosition?: number
+      editedAt?: string
+    } = {}
     if ('title' in patch) data.title = cleanPageTitle(patch.title)
     if ('icon' in patch) data.icon = cleanIcon(patch.icon)
     if ('content' in patch) data.content = cleanBlocks(patch.content)
+    if ('cover' in patch) data.cover = cleanCover(patch.cover)
+    if ('coverPosition' in patch) data.coverPosition = clampInt(patch.coverPosition, 0, 100)
     if (!Object.keys(data).length) return { ok: true }
     if ('title' in data || 'content' in data) data.editedAt = new Date().toISOString()
     await payload.update({ collection: 'note-pages', id: asId(id), data, user, overrideAccess: false })
@@ -383,6 +406,302 @@ export async function searchNotes(query: string): Promise<ActionResult<SearchHit
         snippet: snippetAround(p.plainText ?? '', q),
       })),
     }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// -------------------------------------------------------------- page links
+
+export type PageLinkInfo = { id: number; title: string; icon: string; kind: string; notebookId: number; notebookTitle: string }
+
+/** Titles for "link to page" blocks, across notebooks. Missing ids are trashed or gone. */
+export async function getPageLinks(ids: number[]): Promise<ActionResult<PageLinkInfo[]>> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const wanted = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 200)
+    if (!wanted.length) return { ok: true, data: [] }
+    const [pages, notebooks] = await Promise.all([
+      payload.find({
+        collection: 'note-pages',
+        where: { id: { in: wanted } },
+        select: { title: true, icon: true, kind: true, notebook: true },
+        depth: 0,
+        pagination: false,
+        user,
+        overrideAccess: false,
+      }),
+      payload.find({ collection: 'notebooks', select: { title: true }, pagination: false, user, overrideAccess: false }),
+    ])
+    const titles = new Map(notebooks.docs.map((n) => [n.id, n.title]))
+    return {
+      ok: true,
+      data: pages.docs.map((p) => ({
+        id: p.id,
+        title: p.title ?? '',
+        icon: p.icon ?? '',
+        kind: p.kind ?? 'page',
+        notebookId: idOf(p.notebook)!,
+        notebookTitle: titles.get(idOf(p.notebook)!) ?? '',
+      })),
+    }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/** Pages whose title matches, across notebooks (recently edited first; all recent ones for an empty query). */
+export async function findPages(query: string): Promise<ActionResult<PageLinkInfo[]>> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const q = cleanText(query, MAX_QUERY).trim()
+    const [pages, notebooks] = await Promise.all([
+      payload.find({
+        collection: 'note-pages',
+        where: q ? { title: { contains: q } } : undefined,
+        select: { title: true, icon: true, kind: true, notebook: true },
+        sort: ['-updatedAt', '-id'],
+        limit: 12,
+        depth: 0,
+        user,
+        overrideAccess: false,
+      }),
+      payload.find({ collection: 'notebooks', select: { title: true }, pagination: false, user, overrideAccess: false }),
+    ])
+    const titles = new Map(notebooks.docs.map((n) => [n.id, n.title]))
+    return {
+      ok: true,
+      data: pages.docs.map((p) => ({
+        id: p.id,
+        title: p.title ?? '',
+        icon: p.icon ?? '',
+        kind: p.kind ?? 'page',
+        notebookId: idOf(p.notebook)!,
+        notebookTitle: titles.get(idOf(p.notebook)!) ?? '',
+      })),
+    }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// ------------------------------------------------------------------- boards
+
+const ITEM_SELECT = {
+  title: true,
+  icon: true,
+  status: true,
+  position: true,
+  startDate: true,
+  endDate: true,
+  parentItem: true,
+} as const
+
+function cleanStatus(value: unknown): ItemStatus {
+  const found = ITEM_STATUSES.find((s) => s.value === value)
+  if (!found) throw new Error('狀態錯誤')
+  return found.value
+}
+
+const optionalDay = (value: unknown): string | null => {
+  if (value == null || value === '') return null
+  if (typeof value !== 'string' || !DAY_PATTERN.test(value)) throw new Error('日期格式錯誤')
+  return value
+}
+
+async function boardItems({ payload, user }: Session, boardId: number): Promise<BoardItem[]> {
+  const { docs } = await payload.find({
+    collection: 'note-pages',
+    where: { and: [{ parent: { equals: boardId } }, { kind: { equals: 'item' } }] },
+    select: ITEM_SELECT,
+    depth: 0,
+    pagination: false,
+    user,
+    overrideAccess: false,
+  })
+  return docs.map(toBoardItem)
+}
+
+async function boardOf({ payload, user }: Session, boardId: number) {
+  const board = await payload.findByID({ collection: 'note-pages', id: boardId, depth: 0, user, overrideAccess: false })
+  if (board.kind !== 'board') throw new Error('這不是看板')
+  return board
+}
+
+/** A board inside `hostPageId` (a todo database, like Notion's). */
+export async function createBoard(hostPageId: number): Promise<ActionResult<PageNode>> {
+  try {
+    const session = await requireActionSession()
+    const { payload, user } = session
+    const host = await payload.findByID({ collection: 'note-pages', id: asId(hostPageId), depth: 0, user, overrideAccess: false })
+    const notebook = idOf(host.notebook)!
+    const siblings = childrenOf((await treeOf(session, notebook)).map(toPageNode), host.id)
+    const doc = await payload.create({
+      collection: 'note-pages',
+      data: {
+        notebook,
+        parent: host.id,
+        kind: 'board',
+        title: 'TODO List',
+        position: siblings.length ? siblings[siblings.length - 1].position + 1 : 0,
+      },
+      user,
+      overrideAccess: false,
+    })
+    refreshShelf()
+    return { ok: true, data: toPageNode(doc) }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export type BoardData = { id: number; title: string; icon: string; notebookId: number; items: BoardItem[] }
+
+export async function getBoard(boardId: number): Promise<ActionResult<BoardData>> {
+  try {
+    const session = await requireActionSession()
+    const board = await boardOf(session, asId(boardId))
+    return {
+      ok: true,
+      data: {
+        id: board.id,
+        title: board.title ?? '',
+        icon: board.icon ?? '',
+        notebookId: idOf(board.notebook)!,
+        items: await boardItems(session, board.id),
+      },
+    }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/** A new card at the bottom of a column. */
+export async function createItem(boardId: number, status: ItemStatus, title = ''): Promise<ActionResult<BoardItem>> {
+  try {
+    const session = await requireActionSession()
+    const { payload, user } = session
+    const board = await boardOf(session, asId(boardId))
+    const column = cleanStatus(status)
+    const items = columnOf(await boardItems(session, board.id), column)
+    const doc = await payload.create({
+      collection: 'note-pages',
+      data: {
+        notebook: idOf(board.notebook)!,
+        parent: board.id,
+        kind: 'item',
+        status: column,
+        title: cleanPageTitle(title),
+        position: items.length ? items[items.length - 1].position + 1 : 0,
+      },
+      user,
+      overrideAccess: false,
+    })
+    refreshShelf()
+    return { ok: true, data: toBoardItem(doc) }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export type ItemPatch = Partial<{ status: ItemStatus; startDate: string | null; endDate: string | null; parentItem: number | null }>
+
+/** Item properties (title, icon and content go through updatePage). */
+export async function updateItem(id: number, patch: ItemPatch): Promise<ActionResult> {
+  try {
+    const session = await requireActionSession()
+    const { payload, user } = session
+    const item = await payload.findByID({ collection: 'note-pages', id: asId(id), depth: 0, user, overrideAccess: false })
+    if (item.kind !== 'item') throw new Error('這不是看板項目')
+    const data: ItemPatch = {}
+    if ('status' in patch) data.status = cleanStatus(patch.status)
+    if ('startDate' in patch) data.startDate = optionalDay(patch.startDate)
+    if ('endDate' in patch) data.endDate = optionalDay(patch.endDate)
+    if ('parentItem' in patch) {
+      const target = optionalId(patch.parentItem)
+      if (target != null) {
+        const items = await boardItems(session, idOf(item.parent)!)
+        if (!parentCandidates(items, item.id).some((i) => i.id === target)) throw new Error('上級項目必須是同一個看板裡的其他項目')
+      }
+      data.parentItem = target
+    }
+    // A date range needs both ends: fill the missing one with the other.
+    const start = 'startDate' in data ? data.startDate : (item.startDate ?? null)
+    const end = 'endDate' in data ? data.endDate : (item.endDate ?? null)
+    if (start && !end) data.endDate = start
+    if (end && !start) data.startDate = end
+    if (start && end && start > end) throw new Error('開始日期不能晚於結束日期')
+    await payload.update({ collection: 'note-pages', id: item.id, data, user, overrideAccess: false })
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/** Drags a card into `status` at `index` within that column. */
+export async function moveItem(id: number, status: ItemStatus, index: number): Promise<ActionResult> {
+  try {
+    const session = await requireActionSession()
+    const { payload, user } = session
+    const item = await payload.findByID({ collection: 'note-pages', id: asId(id), depth: 0, user, overrideAccess: false })
+    if (item.kind !== 'item') throw new Error('這不是看板項目')
+    const before = await boardItems(session, idOf(item.parent)!)
+    const after = applyItemMove(before, item.id, cleanStatus(status), Number(index))
+    const changed = after.filter((p, i) => p.status !== before[i].status || p.position !== before[i].position)
+    for (const p of changed) {
+      await payload.update({
+        collection: 'note-pages',
+        id: p.id,
+        data: { status: p.status, position: p.position },
+        user,
+        overrideAccess: false,
+      })
+    }
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export type PageDetail = {
+  id: number
+  notebookId: number
+  kind: string
+  title: string
+  icon: string
+  content: unknown[] | null
+  boardId: number | null
+}
+
+/** Everything the side peek needs to edit a page. */
+export async function getPageDetail(id: number): Promise<ActionResult<PageDetail>> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const page = await payload.findByID({ collection: 'note-pages', id: asId(id), depth: 0, user, overrideAccess: false })
+    return {
+      ok: true,
+      data: {
+        id: page.id,
+        notebookId: idOf(page.notebook)!,
+        kind: page.kind ?? 'page',
+        title: page.title ?? '',
+        icon: page.icon ?? '',
+        content: Array.isArray(page.content) ? page.content : null,
+        boardId: page.kind === 'item' ? idOf(page.parent) : null,
+      },
+    }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// ------------------------------------------------------------------ uploads
+
+/** s3 = Supabase Storage (direct browser upload); local = ./media in development; off = not set up yet. */
+export async function getUploadMode(): Promise<ActionResult<'s3' | 'local' | 'off'>> {
+  try {
+    await requireActionSession()
+    return { ok: true, data: process.env.S3_BUCKET ? 's3' : process.env.VERCEL ? 'off' : 'local' }
   } catch (error) {
     return fail(error)
   }

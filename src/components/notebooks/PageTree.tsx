@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowsDownUp, CaretRight, DotsThree, FileText, Plus, Trash } from '@phosphor-icons/react'
+import { ArrowsDownUp, CaretRight, DotsThree, FileText, Kanban, Plus, Trash } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { UNTITLED, childrenOf, subtreeIds, type PageNode } from '@/lib/notes'
@@ -126,7 +126,7 @@ function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: 
           className="flex min-w-0 flex-1 items-center gap-2 py-1 outline-none"
         >
           <span className="grid size-5 shrink-0 place-items-center text-[15px] leading-none text-muted">
-            {page.icon || <FileText size={16} />}
+            {page.icon || (page.kind === 'board' ? <Kanban size={16} /> : <FileText size={16} />)}
           </span>
           <span className={`truncate ${page.title ? '' : 'text-muted'}`}>{page.title || UNTITLED}</span>
         </Link>

@@ -51,9 +51,12 @@ if (process.argv.includes('--demo')) {
         toeflMinutes: minutes[i % minutes.length],
         toeflSkills: [i % 2 ? 'writing' : 'speaking'],
         energy: 3 + (i % 3 === 0 ? 1 : 0),
-        morningPlan: '07:20 聽英文 podcast',
-        noonPlan: '12:30 通話、Anki 15 分鐘',
-        eveningPlan: i % 2 === 0 ? '健身 → 22:00 托福口說' : '22:00 托福寫作',
+        morningItems: [{ id: `m${i}`, text: '07:20 聽英文 podcast', done: true }],
+        noonItems: [{ id: `n${i}`, text: 'Anki 15 分鐘', done: i % 2 === 0 }],
+        eveningItems: [
+          ...(i % 2 === 0 ? [{ id: `g${i}`, text: '健身', done: true }] : []),
+          { id: `e${i}`, text: i % 2 === 0 ? '22:00 托福口說' : '22:00 托福寫作', done: false },
+        ],
         note: [{ type: 'paragraph', content: '示範筆記：今天口說卡在第二題，明天先練回答架構。' }],
       },
     })

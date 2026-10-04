@@ -2,6 +2,7 @@ import { ArrowRight, CaretLeft, CaretRight } from '@phosphor-icons/react/dist/ss
 import Link from 'next/link'
 import { BlockEditor } from '@/components/editor/BlockEditor'
 import { TaskList } from '@/components/tasks/TaskList'
+import { cleanPlanItems } from '@/lib/dayParts'
 import { addDays, daysBetween, formatDayLong, formatDayShort, isoWeek, weekStart, weekdayOf } from '@/lib/day'
 import { PLAN_SLOTS, TOEFL_SKILLS, labelOf, type ToeflSkill } from '@/lib/options'
 import { getHabits, getImportantTasks, getLogsBetween, getSettings, getWeekTheme, getWeeklyTasks, habitIdsOf, habitsForPeriod, planWeek } from '@/lib/queries'
@@ -26,9 +27,9 @@ function toDayLog(log: DailyLog | undefined | null): DayLog {
     toeflSkills: (log.toeflSkills ?? []) as ToeflSkill[],
     themeMinutes: log.themeMinutes ?? 0,
     energy: log.energy ?? null,
-    morningPlan: log.morningPlan ?? '',
-    noonPlan: log.noonPlan ?? '',
-    eveningPlan: log.eveningPlan ?? '',
+    morningItems: cleanPlanItems(log.morningItems),
+    noonItems: cleanPlanItems(log.noonItems),
+    eveningItems: cleanPlanItems(log.eveningItems),
   }
 }
 

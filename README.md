@@ -23,14 +23,14 @@ npm run dev           # 終端機 2：http://localhost:3000
 
 | 路徑 | 用途 |
 | --- | --- |
-| `/` | 今天：IMPORTANT 1·2·3、早／午／晚、本週待辦、追蹤（最多 4 項每日習慣、托福、本週主題、精力）、Note、週日才出現的週日統整、可展開的「安排明天」、本週統計 |
+| `/` | 今天：IMPORTANT 1·2·3、早／午／晚（當天用的勾選清單，不列入統計）、本週待辦、追蹤（最多 4 項每日習慣、托福、本週主題、精力）、Note、週日才出現的週日統整、可展開的「安排明天」、本週統計 |
 | `/journal` | 書架：上層是每年一本的日記本，下層是自己新增的筆記本（可選顏色和花紋）；點書本會放大並翻開 |
 | `/journal/2026` | 年度：12 個月的縮圖 |
 | `/journal/2026/10` | 大月曆：每天的 Important、跨日任務、到期日；點週數打開週筆記；下方是月統整 |
 | `/journal/week/<週一日期>` | 週筆記：本週主題、本週待辦、每天的 Important、週日統整與下週主題 |
 | `/journal/day/<日期>` | 任何一天的頁面 |
 | `/notebooks/<id>` | 打開筆記本：回到上次編輯的那一頁 |
-| `/notebooks/<id>/<頁面>` | 筆記頁面（Notion 式）：左側頁面樹（可拖曳排序、無限層子頁面）、圖示、搜尋（Ctrl K，跨所有筆記本）、垃圾桶（30 天後自動刪除） |
+| `/notebooks/<id>/<頁面>` | 筆記頁面（Notion 式）：左側頁面樹（可拖曳排序、無限層子頁面）、圖示、封面圖、搜尋（Ctrl K，跨所有筆記本）、垃圾桶（30 天後自動刪除）。文中可用 `/` 插入：頁面（子頁面）、連結到頁面（跨筆記本）、待辦看板（看板／表格，每張卡片都是一頁，右側滑出編輯）、標註、目錄、兩欄／三欄、圖片、影片、檔案；`> ` 是可折疊列 |
 | `/toefl` | 托福：新制 1–6 級分趨勢、每週練習時數、分數紀錄 |
 | `/ideas` | 想學清單：快速記下、0–3 評分、設定本週主題 |
 | `/admin` | Payload 後台：考試日期、每週科目、檢查點、日記本封面與花紋，以及所有資料 |
@@ -50,6 +50,21 @@ npm run dev           # 終端機 2：http://localhost:3000
 4. 部署後第一次啟動會自動執行 `src/migrations/` 建立資料表。
 5. 開啟 `https://<你的網域>/admin/create-first-user` 建立帳號。之後只有已登入的人能新增帳號。
 6. 到 `/admin/globals/settings` 填入**托福考試日期**。
+
+### 圖片與檔案（Supabase Storage）
+
+筆記裡的圖片、影片、檔案和封面放在 Supabase Storage 的**私人** bucket，只有登入後才看得到（每次顯示時產生短效簽名網址）。
+
+1. Supabase → Storage → **New bucket**，名稱例如 `notes`，**不要**勾 Public。
+2. Storage → Settings → **S3 Connection**：確認已啟用，記下 Endpoint 和 Region；在 **S3 Access Keys** 建立一組 key。
+3. 在 Vercel 加環境變數（只勾 Production）：
+   - `S3_BUCKET`：bucket 名稱（例如 `notes`）
+   - `S3_ENDPOINT`：照 S3 Connection 頁面顯示的 Endpoint（形如 `https://<project-ref>.supabase.co/storage/v1/s3`）
+   - `S3_REGION`：例如 `ap-northeast-1`
+   - `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`：步驟 2 的 key
+4. 重新部署。瀏覽器會直接把檔案傳到 bucket，所以可以超過 Vercel 4.5 MB 的限制（上限 50 MB）。
+
+沒設定這些變數時，正式環境會顯示「還沒設定檔案儲存空間」；本機開發則存在專案的 `media/` 資料夾。
 
 ### 修改資料結構之後
 

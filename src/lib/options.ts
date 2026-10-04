@@ -71,3 +71,20 @@ export type CoverPattern = (typeof COVER_PATTERNS)[number]['value']
 /** Payload select options (without the extra keys). */
 export const selectOptions = (list: readonly { label: string; value: string }[]) =>
   list.map(({ label, value }) => ({ label, value }))
+
+/** Kinds of notebook pages: a plain page, a board (todo database) and its items. */
+export const PAGE_KINDS = [
+  { label: '頁面', value: 'page' },
+  { label: '看板', value: 'board' },
+  { label: '看板項目', value: 'item' },
+] as const
+export type PageKind = (typeof PAGE_KINDS)[number]['value']
+
+/** Board columns, in order. `tone` picks the pastel pair for the tag. */
+export const ITEM_STATUSES = [
+  { label: '未開始', value: 'todo', tone: 'gray' },
+  { label: '進行中', value: 'doing', tone: 'blue' },
+  { label: '完成', value: 'done', tone: 'green' },
+  { label: '封存', value: 'archived', tone: 'gray' },
+] as const
+export type ItemStatus = (typeof ITEM_STATUSES)[number]['value']

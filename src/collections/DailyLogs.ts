@@ -36,10 +36,10 @@ export const DailyLogs: CollectionConfig = {
     },
     { name: 'themeMinutes', label: '本週主題分鐘數', type: 'number', min: 0, defaultValue: 0 },
     { name: 'energy', label: '精力（1–5）', type: 'number', min: 1, max: 5 },
-    // What actually happens in each part of the day.
-    { name: 'morningPlan', label: '早', type: 'textarea' },
-    { name: 'noonPlan', label: '午', type: 'textarea' },
-    { name: 'eveningPlan', label: '晚', type: 'textarea' },
+    // 早 / 午 / 晚 checklists: [{ id, text, done }] (lib/dayParts.ts).
+    { name: 'morningItems', label: '早', type: 'json' },
+    { name: 'noonItems', label: '午', type: 'json' },
+    { name: 'eveningItems', label: '晚', type: 'json' },
     {
       name: 'note',
       label: 'Note（反思）',

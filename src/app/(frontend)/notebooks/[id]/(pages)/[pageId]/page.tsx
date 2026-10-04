@@ -38,9 +38,13 @@ export default async function NotePage({ params }: Props) {
       key={page.id}
       page={{
         id: page.id,
+        kind: page.kind ?? 'page',
+        boardId: page.kind === 'item' ? (typeof page.parent === 'number' ? page.parent : (page.parent?.id ?? null)) : null,
         title: page.title ?? '',
         icon: page.icon ?? '',
         content: Array.isArray(page.content) ? page.content : null,
+        cover: page.cover ?? '',
+        coverPosition: page.coverPosition ?? 50,
       }}
       renderedAt={renderStamp()}
     />
