@@ -67,8 +67,11 @@ export interface Config {
   };
   blocks: {};
   collections: {
+    'daily-logs': DailyLog;
+    'toefl-scores': ToeflScore;
+    ideas: Idea;
+    'weekly-reviews': WeeklyReview;
     users: User;
-    media: Media;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -76,19 +79,26 @@ export interface Config {
   };
   collectionsJoins: {};
   collectionsSelect: {
+    'daily-logs': DailyLogsSelect<false> | DailyLogsSelect<true>;
+    'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
+    ideas: IdeasSelect<false> | IdeasSelect<true>;
+    'weekly-reviews': WeeklyReviewsSelect<false> | WeeklyReviewsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
-    media: MediaSelect<false> | MediaSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
     'payload-migrations': PayloadMigrationsSelect<false> | PayloadMigrationsSelect<true>;
   };
   db: {
-    defaultIDType: string;
+    defaultIDType: number;
   };
   fallbackLocale: null;
-  globals: {};
-  globalsSelect: {};
+  globals: {
+    settings: Setting;
+  };
+  globalsSelect: {
+    settings: SettingsSelect<false> | SettingsSelect<true>;
+  };
   locale: null;
   widgets: {
     collections: CollectionsWidget;
@@ -119,10 +129,106 @@ export interface UserAuthOperations {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "daily-logs".
+ */
+export interface DailyLog {
+  id: number;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  date: string;
+  morningListening?: boolean | null;
+  gym?: boolean | null;
+  toeflMinutes?: number | null;
+  toeflSkills?: ('speaking' | 'writing' | 'reading' | 'listening' | 'vocab')[] | null;
+  themeMinutes?: number | null;
+  energy?: number | null;
+  notes?: string | null;
+  tomorrowTop1?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toefl-scores".
+ */
+export interface ToeflScore {
+  id: number;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  date: string;
+  type: 'mini' | 'section' | 'full' | 'official';
+  source?: ('ets' | 'third-party' | 'ai') | null;
+  reading?: number | null;
+  listening?: number | null;
+  speaking?: number | null;
+  writing?: number | null;
+  /**
+   * 四科都有級分時自動計算
+   */
+  overall?: number | null;
+  notes?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ideas".
+ */
+export interface Idea {
+  id: number;
+  title: string;
+  why?: string | null;
+  /**
+   * 對托福、工作或長期目標的幫助（0–3）
+   */
+  scoreGoal?: number | null;
+  /**
+   * 有沒有時間壓力（0–3）
+   */
+  scoreUrgency?: number | null;
+  /**
+   * 現在有多想學（0–3）
+   */
+  scorePassion?: number | null;
+  /**
+   * 自動計算
+   */
+  total?: number | null;
+  status: 'inbox' | 'selected' | 'done' | 'dropped';
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "weekly-reviews".
+ */
+export interface WeeklyReview {
+  id: number;
+  /**
+   * 該週的週一，YYYY-MM-DD
+   */
+  weekStart: string;
+  reflection?: string | null;
+  nextTheme?: (number | null) | Idea;
+  themeReason?: string | null;
+  keyResults?:
+    | {
+        text: string;
+        done?: boolean | null;
+        id?: string | null;
+      }[]
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "users".
  */
 export interface User {
-  id: string;
+  id: number;
   updatedAt: string;
   createdAt: string;
   email: string;
@@ -130,6 +236,7 @@ export interface User {
   resetPasswordExpiration?: string | null;
   salt?: string | null;
   hash?: string | null;
+  resetPasswordRequestedAt?: string | null;
   loginAttempts?: number | null;
   lockUntil?: string | null;
   sessions?:
@@ -144,29 +251,10 @@ export interface User {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "media".
- */
-export interface Media {
-  id: string;
-  alt: string;
-  updatedAt: string;
-  createdAt: string;
-  url?: string | null;
-  thumbnailURL?: string | null;
-  filename?: string | null;
-  mimeType?: string | null;
-  filesize?: number | null;
-  width?: number | null;
-  height?: number | null;
-  focalX?: number | null;
-  focalY?: number | null;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
-  id: string;
+  id: number;
   key: string;
   data:
     | {
@@ -183,20 +271,32 @@ export interface PayloadKv {
  * via the `definition` "payload-locked-documents".
  */
 export interface PayloadLockedDocument {
-  id: string;
+  id: number;
   document?:
     | ({
-        relationTo: 'users';
-        value: string | User;
+        relationTo: 'daily-logs';
+        value: number | DailyLog;
       } | null)
     | ({
-        relationTo: 'media';
-        value: string | Media;
+        relationTo: 'toefl-scores';
+        value: number | ToeflScore;
+      } | null)
+    | ({
+        relationTo: 'ideas';
+        value: number | Idea;
+      } | null)
+    | ({
+        relationTo: 'weekly-reviews';
+        value: number | WeeklyReview;
+      } | null)
+    | ({
+        relationTo: 'users';
+        value: number | User;
       } | null);
   globalSlug?: string | null;
   user: {
     relationTo: 'users';
-    value: string | User;
+    value: number | User;
   };
   updatedAt: string;
   createdAt: string;
@@ -206,10 +306,10 @@ export interface PayloadLockedDocument {
  * via the `definition` "payload-preferences".
  */
 export interface PayloadPreference {
-  id: string;
+  id: number;
   user: {
     relationTo: 'users';
-    value: string | User;
+    value: number | User;
   };
   key?: string | null;
   value?:
@@ -229,11 +329,79 @@ export interface PayloadPreference {
  * via the `definition` "payload-migrations".
  */
 export interface PayloadMigration {
-  id: string;
+  id: number;
   name?: string | null;
   batch?: number | null;
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "daily-logs_select".
+ */
+export interface DailyLogsSelect<T extends boolean = true> {
+  date?: T;
+  morningListening?: T;
+  gym?: T;
+  toeflMinutes?: T;
+  toeflSkills?: T;
+  themeMinutes?: T;
+  energy?: T;
+  notes?: T;
+  tomorrowTop1?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toefl-scores_select".
+ */
+export interface ToeflScoresSelect<T extends boolean = true> {
+  date?: T;
+  type?: T;
+  source?: T;
+  reading?: T;
+  listening?: T;
+  speaking?: T;
+  writing?: T;
+  overall?: T;
+  notes?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "ideas_select".
+ */
+export interface IdeasSelect<T extends boolean = true> {
+  title?: T;
+  why?: T;
+  scoreGoal?: T;
+  scoreUrgency?: T;
+  scorePassion?: T;
+  total?: T;
+  status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "weekly-reviews_select".
+ */
+export interface WeeklyReviewsSelect<T extends boolean = true> {
+  weekStart?: T;
+  reflection?: T;
+  nextTheme?: T;
+  themeReason?: T;
+  keyResults?:
+    | T
+    | {
+        text?: T;
+        done?: T;
+        id?: T;
+      };
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -247,6 +415,7 @@ export interface UsersSelect<T extends boolean = true> {
   resetPasswordExpiration?: T;
   salt?: T;
   hash?: T;
+  resetPasswordRequestedAt?: T;
   loginAttempts?: T;
   lockUntil?: T;
   sessions?:
@@ -256,24 +425,6 @@ export interface UsersSelect<T extends boolean = true> {
         createdAt?: T;
         expiresAt?: T;
       };
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "media_select".
- */
-export interface MediaSelect<T extends boolean = true> {
-  alt?: T;
-  updatedAt?: T;
-  createdAt?: T;
-  url?: T;
-  thumbnailURL?: T;
-  filename?: T;
-  mimeType?: T;
-  filesize?: T;
-  width?: T;
-  height?: T;
-  focalX?: T;
-  focalY?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -314,6 +465,82 @@ export interface PayloadMigrationsSelect<T extends boolean = true> {
   batch?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "settings".
+ */
+export interface Setting {
+  id: number;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  planStart: string;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  examDate?: string | null;
+  baselineBand?: number | null;
+  targetBand?: number | null;
+  checkpoints?:
+    | {
+        week: number;
+        target: number;
+        id?: string | null;
+      }[]
+    | null;
+  weeklyTargets?: {
+    toeflHours?: number | null;
+    gymSessions?: number | null;
+  };
+  weekPlan: {
+    mon: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
+    tue: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
+    wed: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
+    thu: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
+    fri: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
+    sat: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
+    sun: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
+  };
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "settings_select".
+ */
+export interface SettingsSelect<T extends boolean = true> {
+  planStart?: T;
+  examDate?: T;
+  baselineBand?: T;
+  targetBand?: T;
+  checkpoints?:
+    | T
+    | {
+        week?: T;
+        target?: T;
+        id?: T;
+      };
+  weeklyTargets?:
+    | T
+    | {
+        toeflHours?: T;
+        gymSessions?: T;
+      };
+  weekPlan?:
+    | T
+    | {
+        mon?: T;
+        tue?: T;
+        wed?: T;
+        thu?: T;
+        fri?: T;
+        sat?: T;
+        sun?: T;
+      };
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

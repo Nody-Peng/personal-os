@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "local-db",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/local-db.mjs"],
+      "port": 54322
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    }
+  ]
+}

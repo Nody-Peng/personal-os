@@ -1,12 +1,19 @@
 import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
+import { en } from '@payloadcms/translations/languages/en'
+import { zhTw } from '@payloadcms/translations/languages/zhTw'
 import path from 'path'
 import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
 import sharp from 'sharp'
 
+import { DailyLogs } from './collections/DailyLogs'
+import { Ideas } from './collections/Ideas'
+import { ToeflScores } from './collections/ToeflScores'
 import { Users } from './collections/Users'
-import { Media } from './collections/Media'
+import { WeeklyReviews } from './collections/WeeklyReviews'
+import { Settings } from './globals/Settings'
+import { migrations } from './migrations'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -17,8 +24,16 @@ export default buildConfig({
     importMap: {
       baseDir: path.resolve(dirname),
     },
+    meta: {
+      titleSuffix: ' · Personal OS',
+    },
   },
-  collections: [Users, Media],
+  i18n: {
+    fallbackLanguage: 'zh-TW',
+    supportedLanguages: { 'zh-TW': zhTw, en },
+  },
+  collections: [DailyLogs, ToeflScores, Ideas, WeeklyReviews, Users],
+  globals: [Settings],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
@@ -28,6 +43,10 @@ export default buildConfig({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
     },
+    // Development pushes schema changes directly; production (Supabase) only
+    // changes through migrations, applied automatically on startup.
+    // After a schema change: npm run payload migrate:create <name>
+    prodMigrations: migrations,
   }),
   sharp,
   plugins: [],

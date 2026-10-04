@@ -1,67 +1,69 @@
-# Payload Blank Template
+# Personal OS
 
-This template comes configured with the bare minimum to get started on anything you need.
+以我為中心的個人平台：每日打卡、托福進度追蹤、想學清單。規格書在 [docs/SPEC.md](docs/SPEC.md)。
 
-## Quick start
+技術：Next.js 16 + Payload 3（內嵌）+ PostgreSQL（本機用 embedded Postgres，正式環境用 Supabase）+ Tailwind v4，部署到 Vercel。
 
-This template can be deployed directly from our Cloud hosting and it will setup MongoDB and cloud S3 object storage for media.
+## 本機開發
 
-## Quick Start - local setup
+```bash
+npm install
+npm run db:local      # 終端機 1：啟動本機 Postgres（port 54322，資料在 .local-db/）
+npm run dev           # 終端機 2：http://localhost:3000
+```
 
-To spin up this template locally, follow these steps:
+第一次開啟時：
 
-### Clone
+- 到 `http://localhost:3000/admin/create-first-user` 建立自己的帳號，或
+- 執行 `npm run seed:dev` 建立本機測試帳號（帳密寫在 `scripts/seed-dev.ts`）；加上 `-- --demo` 會再放入範例資料
 
-After you click the `Deploy` button above, you'll want to have standalone copy of this repo on your machine. If you've already cloned this repo, skip to [Development](#development).
+`.env` 的 `DATABASE_URL` 要指向本機資料庫（參考 `.env.example`）。
 
-### Development
+## 頁面
 
-1. First [clone the repo](#clone) if you have not done so already
-2. `cd my-project && cp .env.example .env` to copy the example environment variables. You'll need to add the `MONGODB_URL` from your Cloud project to your `.env` if you want to use S3 storage and the MongoDB database that was created for you.
+| 路徑 | 用途 |
+| --- | --- |
+| `/` | 今天：聽力、健身打卡、托福分鐘數、本週主題、精力、關機儀式、本週統計 |
+| `/toefl` | 托福：分數趨勢對照目標路線、每週練習時數、新增與刪除分數 |
+| `/ideas` | 想學清單：快速記下、0–3 評分、設定本週主題 |
+| `/admin` | Payload 後台：設定考試日期、每週科目、檢查點，以及所有資料 |
 
-3. `pnpm install && pnpm dev` to install dependencies and start the dev server
-4. open `http://localhost:3000` to open the app in your browser
+所有頁面都要登入。未登入會被導到 `/admin/login`。
 
-That's it! Changes made in `./src` will be reflected in your app. Follow the on-screen instructions to login and create your first admin user. Then check out [Production](#production) once you're ready to build and serve your app, and [Deployment](#deployment) when you're ready to go live.
+## 部署到 Vercel + Supabase
 
-#### Docker (Optional)
+1. **建立 Supabase 專案**，到 Project Settings → Database → Connection string，複製 **Transaction pooler**（port 6543）的連線字串。
+2. **關閉 Supabase Data API**（Project Settings → Data API），或在 SQL Editor 對所有資料表執行 `alter table ... enable row level security;`。
+   Payload 用資料庫擁有者連線，不受影響；但若不關閉，持有 anon key 的人可能透過 Supabase API 讀到資料。
+3. **在 Vercel 匯入這個 repo**，設定環境變數：
+   - `DATABASE_URL`：步驟 1 的連線字串（填入密碼）
+   - `PAYLOAD_SECRET`：一段夠長的隨機字串（例如 `openssl rand -hex 32` 產生）
+4. 部署後第一次啟動會自動執行 `src/migrations/` 建立資料表。
+5. 開啟 `https://<你的網域>/admin/create-first-user` 建立帳號。之後只有已登入的人能新增帳號。
+6. 到 `/admin/globals/settings` 填入**托福考試日期**。
 
-If you prefer to use Docker for local development instead of a local MongoDB instance, the provided docker-compose.yml file can be used.
+### 修改資料結構之後
 
-To do so, follow these steps:
+本機開發時 Payload 會直接同步資料表；正式環境只透過 migration 變更：
 
-- Modify the `MONGODB_URL` in your `.env` file to `mongodb://127.0.0.1/<dbname>`
-- Modify the `docker-compose.yml` file's `MONGODB_URL` to match the above `<dbname>`
-- Run `docker-compose up` to start the database, optionally pass `-d` to run in the background.
+```bash
+npm run payload migrate:create <描述>
+```
 
-## How it works
+把產生的 `src/migrations/*` 一起 commit，部署時會自動套用。
 
-The Payload config is tailored specifically to the needs of most websites. It is pre-configured in the following ways:
+## 加到手機主畫面（主手機、Flip5）
 
-### Collections
+用 Chrome 開啟網站 → 選單 →「加到主畫面」。會以獨立 App 的方式開啟，主畫面長按圖示可以直接跳到「想學」或「托福」。
 
-See the [Collections](https://payloadcms.com/docs/configuration/collections) docs for details on how to extend this functionality.
+## 指令
 
-- #### Users (Authentication)
-
-  Users are auth-enabled collections that have access to the admin panel.
-
-  For additional help, see the official [Auth Example](https://github.com/payloadcms/payload/tree/3.x/examples/auth) or the [Authentication](https://payloadcms.com/docs/authentication/overview#authentication-overview) docs.
-
-- #### Media
-
-  This is the uploads enabled collection. It features pre-configured sizes, focal point and manual resizing to help you manage your pictures.
-
-### Docker
-
-Alternatively, you can use [Docker](https://www.docker.com) to spin up this template locally. To do so, follow these steps:
-
-1. Follow [steps 1 and 2 from above](#development), the docker-compose file will automatically use the `.env` file in your project root
-1. Next run `docker-compose up`
-1. Follow [steps 4 and 5 from above](#development) to login and create your first admin user
-
-That's it! The Docker instance will help you get up and running quickly while also standardizing the development environment across your teams.
-
-## Questions
-
-If you have any issues or questions, reach out to us on [Discord](https://discord.com/invite/payload) or start a [GitHub discussion](https://github.com/payloadcms/payload/discussions).
+| 指令 | 說明 |
+| --- | --- |
+| `npm run dev` | 開發伺服器 |
+| `npm run db:local` | 本機 Postgres |
+| `npm run seed:dev` | 本機測試帳號（`-- --demo` 加範例資料；只會在本機資料庫執行） |
+| `npm run build` | 正式版建置 |
+| `npm run lint` | ESLint |
+| `npm run test:int` | 單元與整合測試（需要 `db:local` 在跑） |
+| `npm run generate:types` | 修改 collections 後重新產生型別 |
