@@ -160,6 +160,40 @@
   }
 }
 
+/* Dialogs: a quick fade for the scrim, a short rise for the panel. */
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+.modal-scrim {
+  animation: scrim-in 160ms ease-out both;
+}
+.modal-panel {
+  animation: panel-in 220ms var(--ease-out-soft) both;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+.drawer-in {
+  animation: drawer-in 260ms var(--ease-out-soft) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-scrim,
+  .modal-panel,
+  .drawer-in {
+    animation: none;
+  }
+}
+
 /* BlockNote editor, blended into the page (no box, app typography). */
 .journal-editor.bn-container {
   --bn-colors-editor-background: transparent;
@@ -188,20 +222,57 @@
   }
 }
 
-/* Hardcover journals on the bookshelf: cloth weave + gold foil. */
+/* A notebook page: the editor is the page, so clicking below the text still writes. */
+.note-editor .bn-editor {
+  min-height: 40vh;
+  font-size: 1.0625rem;
+  line-height: 1.7;
+}
+
+/* Hardcover books on the bookshelf: cloth weave + a pattern + gold foil.
+   `.cover-cloth` is the material alone (also used by small swatches). */
+.cover-cloth {
+  --weave:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0 1px, transparent 1px 3px);
+  --light: linear-gradient(100deg, rgba(255, 255, 255, 0.06), transparent 40%, rgba(0, 0, 0, 0.18));
+  --pattern: linear-gradient(transparent, transparent);
+  background: var(--pattern), var(--weave), var(--light) var(--cover);
+}
 .book-cover {
   --gold: #d2b574;
-  background-color: var(--cover);
-  background-image:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0 1px, transparent 1px 3px),
-    linear-gradient(100deg, rgba(255, 255, 255, 0.06), transparent 40%, rgba(0, 0, 0, 0.18));
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.06),
     0 1px 1px rgba(17, 17, 17, 0.08),
     0 18px 30px -12px rgba(17, 17, 17, 0.45);
   transform-origin: left center;
   transition: transform 500ms var(--ease-out-soft), box-shadow 500ms var(--ease-out-soft);
+}
+/* 格紋: a muted tartan of wide and narrow bands. */
+.cover-cloth[data-pattern='plaid'] {
+  --pattern:
+    repeating-linear-gradient(0deg, transparent 0 14px, rgba(255, 255, 255, 0.07) 14px 22px, transparent 22px 26px, rgba(255, 255, 255, 0.05) 26px 27px, transparent 27px 36px),
+    repeating-linear-gradient(90deg, transparent 0 14px, rgba(255, 255, 255, 0.07) 14px 22px, transparent 22px 26px, rgba(0, 0, 0, 0.12) 26px 27px, transparent 27px 36px);
+}
+/* 細條紋 */
+.cover-cloth[data-pattern='pinstripe'] {
+  --pattern: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 8px);
+}
+/* 點點 */
+.cover-cloth[data-pattern='dots'] {
+  --pattern:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.14) 0 1.4px, transparent 1.9px) 0 0 / 14px 14px,
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.14) 0 1.4px, transparent 1.9px) 7px 7px / 14px 14px;
+}
+/* 大理石紋: combed marbled-paper veins: stripes bent by SVG turbulence (inline, no image file). */
+.cover-cloth[data-pattern='marble'] {
+  --pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='320'%3E%3Cdefs%3E%3Cpattern id='s' width='240' height='33' patternUnits='userSpaceOnUse'%3E%3Crect width='240' height='1.2' fill='%23fff' opacity='.5'/%3E%3Crect y='11' width='240' height='2.5' fill='%23fff' opacity='.22'/%3E%3Crect y='22' width='240' height='.8' fill='%23e6c98f' opacity='.55'/%3E%3C/pattern%3E%3Cfilter id='m' x='-20%25' y='-20%25' width='140%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.012' numOctaves='3' seed='3'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='120' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3C/defs%3E%3Crect x='-40' y='-40' width='320' height='400' fill='url(%23s)' filter='url(%23m)' opacity='.5'/%3E%3C/svg%3E") 0 0 / cover;
+}
+/* 菱格 */
+.cover-cloth[data-pattern='diamond'] {
+  --pattern:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 16px);
 }
 .book-link:hover .book-cover,
 .book-link:focus-visible .book-cover {
@@ -218,6 +289,30 @@
   text-shadow:
     0 1px 0 rgba(0, 0, 0, 0.35),
     0 -1px 0 rgba(255, 255, 255, 0.12);
+}
+/* Opening a book (components/books/BookOpener): the cover swings on its spine. */
+.book-hinge {
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.book-face {
+  backface-visibility: hidden;
+}
+.book-endpaper {
+  transform: rotateY(180deg);
+  border-radius: 6px 3px 3px 6px;
+  background:
+    linear-gradient(270deg, rgba(0, 0, 0, 0.12), transparent 12%),
+    #ece6d8;
+}
+.book-paper {
+  border-radius: 3px 6px 6px 3px;
+  background:
+    linear-gradient(90deg, rgba(17, 17, 17, 0.09), transparent 7%),
+    var(--color-surface);
+  box-shadow: 0 18px 30px -12px rgba(17, 17, 17, 0.35);
+  will-change: transform;
 }
 @media (prefers-reduced-motion: reduce) {
   .book-cover {

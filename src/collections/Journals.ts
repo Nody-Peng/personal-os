@@ -1,13 +1,6 @@
 import type { CollectionConfig } from 'payload'
 import { authenticated } from '@/access/authenticated'
-
-export const COVER_COLORS = [
-  { label: '深藍', value: 'navy' },
-  { label: '墨綠', value: 'forest' },
-  { label: '酒紅', value: 'burgundy' },
-  { label: '炭灰', value: 'charcoal' },
-] as const
-export type CoverColor = (typeof COVER_COLORS)[number]['value']
+import { COVER_COLORS, COVER_PATTERNS, selectOptions } from '@/lib/options'
 
 // One hardcover book per year on the bookshelf.
 export const Journals: CollectionConfig = {
@@ -15,7 +8,7 @@ export const Journals: CollectionConfig = {
   labels: { singular: '日記本', plural: '日記本' },
   admin: {
     useAsTitle: 'title',
-    defaultColumns: ['year', 'title', 'coverColor'],
+    defaultColumns: ['year', 'title', 'coverColor', 'pattern'],
   },
   defaultSort: '-year',
   access: {
@@ -28,6 +21,12 @@ export const Journals: CollectionConfig = {
     { name: 'year', label: '年份', type: 'number', required: true, unique: true, index: true, min: 2000, max: 2100 },
     { name: 'title', label: '書名', type: 'text', required: true },
     { name: 'subtitle', label: '副標', type: 'text' },
-    { name: 'coverColor', label: '封面顏色', type: 'select', required: true, defaultValue: 'navy', options: [...COVER_COLORS] },
+    {
+      type: 'row',
+      fields: [
+        { name: 'coverColor', label: '封面顏色', type: 'select', required: true, defaultValue: 'navy', options: selectOptions(COVER_COLORS) },
+        { name: 'pattern', label: '花紋', type: 'select', required: true, defaultValue: 'cloth', options: selectOptions(COVER_PATTERNS) },
+      ],
+    },
   ],
 }

@@ -1,12 +1,12 @@
 'use client'
 
-import { BookBookmark, ChartLineUp, GearSix, Lightbulb, SignOut, SunHorizon } from '@phosphor-icons/react'
+import { Books, ChartLineUp, GearSix, Lightbulb, SignOut, SunHorizon } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 
 const ITEMS = [
   { href: '/', label: '今天', Icon: SunHorizon },
-  { href: '/journal', label: '日記本', Icon: BookBookmark },
+  { href: '/journal', label: '書架', Icon: Books },
   { href: '/toefl', label: '托福', Icon: ChartLineUp },
   { href: '/ideas', label: '想學', Icon: Lightbulb },
 ] as const

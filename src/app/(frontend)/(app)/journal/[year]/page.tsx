@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import type { CoverColor } from '@/collections/Journals'
-import { BookCover } from '@/components/journal/BookCover'
+import { JournalCover } from '@/components/books/BookCover'
 import { addDays, daysInMonth, logicalDay, weekStart } from '@/lib/day'
 import { getImportantTasks, getJournal, getLogsBetween } from '@/lib/queries'
 import { requireSession } from '@/lib/session'
@@ -46,10 +45,11 @@ export default async function YearPage({ params }: Props) {
     <>
       <header className="mb-8 flex items-center gap-5 md:mb-10">
         <div className="w-16 shrink-0 md:w-20">
-          <BookCover
+          <JournalCover
             year={year}
             title={journal?.title ?? `${year} 日記本`}
-            coverColor={(journal?.coverColor as CoverColor) ?? 'navy'}
+            coverColor={journal?.coverColor ?? 'navy'}
+            pattern={journal?.pattern}
             size="sm"
           />
         </div>

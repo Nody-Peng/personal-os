@@ -10,10 +10,11 @@ type Props = {
   initial: unknown[] | null
   placeholder: string
   onChange: (blocks: unknown[]) => void
+  className?: string
 }
 
 /** BlockNote itself; loaded only in the browser (see BlockEditor). */
-export default function BlockEditorInner({ initial, placeholder, onChange }: Props) {
+export default function BlockEditorInner({ initial, placeholder, onChange, className = '' }: Props) {
   const editor = useCreateBlockNote({
     initialContent: initial?.length ? (initial as PartialBlock[]) : undefined,
     dictionary: {
@@ -26,7 +27,7 @@ export default function BlockEditorInner({ initial, placeholder, onChange }: Pro
     <BlockNoteView
       editor={editor}
       theme="light"
-      className="journal-editor"
+      className={`journal-editor ${className}`}
       onChange={() => onChange(editor.document as unknown[])}
     />
   )

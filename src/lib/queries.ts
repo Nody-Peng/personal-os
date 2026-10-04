@@ -194,7 +194,7 @@ export async function getJournals({ payload, user }: Session, currentYear: numbe
   if (!docs.some((j) => j.year === currentYear)) {
     await payload.create({
       collection: 'journals',
-      data: { year: currentYear, title: `${currentYear} 日記本`, coverColor: 'navy' },
+      data: { year: currentYear, title: `${currentYear} 日記本`, coverColor: 'navy', pattern: 'cloth' },
       user,
       overrideAccess: false,
     })

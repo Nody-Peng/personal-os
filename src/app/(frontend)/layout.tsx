@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import React from 'react'
+import { BookOpenProvider } from '@/components/books/BookOpener'
 import './styles.css'
 
 const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
@@ -22,7 +23,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-Hant-TW" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body className="min-h-[100dvh]">{children}</body>
+      <body className="min-h-[100dvh]">
+        <BookOpenProvider>{children}</BookOpenProvider>
+      </body>
     </html>
   )
 }

@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef } from 'react'
 import { saveDailyLog } from '@/app/(frontend)/actions'
 import { saveMonthNote, saveWeekNote, updateTask } from '@/app/(frontend)/journal-actions'
+import { updatePage } from '@/app/(frontend)/notebook-actions'
 import type { ActionResult } from '@/lib/actionUtils'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 
@@ -18,6 +19,7 @@ export type EditorTarget =
   | { kind: 'task'; id: number }
   | { kind: 'week'; monday: string }
   | { kind: 'month'; month: string }
+  | { kind: 'note'; id: number }
 
 function save(target: EditorTarget, blocks: unknown[]): Promise<ActionResult> {
   switch (target.kind) {
@@ -29,6 +31,8 @@ function save(target: EditorTarget, blocks: unknown[]): Promise<ActionResult> {
       return saveWeekNote(target.monday, { review: blocks })
     case 'month':
       return saveMonthNote(target.month, blocks)
+    case 'note':
+      return updatePage(target.id, { content: blocks })
   }
 }
 
@@ -39,18 +43,23 @@ type Props = {
   initial: unknown[] | null
   placeholder?: string
   onStatus?: (status: SaveStatus, error: string | null) => void
+  /** Sees every change as it happens (before the debounced save). */
+  onChange?: (blocks: unknown[]) => void
+  className?: string
 }
 
 /** Notion-style editor that autosaves a second after typing stops. */
-export function BlockEditor({ target, initial, placeholder = '輸入文字，或按 / 插入區塊', onStatus }: Props) {
+export function BlockEditor({ target, initial, placeholder = '輸入文字，或按 / 插入區塊', onStatus, onChange: onEdit, className }: Props) {
   const { enqueue, status, error } = useSaveQueue()
   const pending = useRef<unknown[] | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const targetRef = useRef(target)
   const onStatusRef = useRef(onStatus)
+  const onEditRef = useRef(onEdit)
   useEffect(() => {
     targetRef.current = target
     onStatusRef.current = onStatus
+    onEditRef.current = onEdit
   })
 
   const flush = useCallback(() => {
@@ -66,6 +75,7 @@ export function BlockEditor({ target, initial, placeholder = '輸入文字，或
 
   const onChange = useCallback(
     (blocks: unknown[]) => {
+      onEditRef.current?.(blocks)
       pending.current = blocks
       if (timer.current) clearTimeout(timer.current)
       timer.current = setTimeout(flush, SAVE_DELAY)
@@ -87,7 +97,7 @@ export function BlockEditor({ target, initial, placeholder = '輸入文字，或
 
   return (
     <div className="-mx-1">
-      <Inner initial={initial} placeholder={placeholder} onChange={onChange} />
+      <Inner initial={initial} placeholder={placeholder} onChange={onChange} className={className} />
     </div>
   )
 }

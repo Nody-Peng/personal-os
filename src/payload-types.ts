@@ -73,6 +73,8 @@ export interface Config {
     'weekly-reviews': WeeklyReview;
     'monthly-notes': MonthlyNote;
     journals: Journal;
+    notebooks: Notebook;
+    'note-pages': NotePage;
     'toefl-scores': ToeflScore;
     ideas: Idea;
     users: User;
@@ -89,6 +91,8 @@ export interface Config {
     'weekly-reviews': WeeklyReviewsSelect<false> | WeeklyReviewsSelect<true>;
     'monthly-notes': MonthlyNotesSelect<false> | MonthlyNotesSelect<true>;
     journals: JournalsSelect<false> | JournalsSelect<true>;
+    notebooks: NotebooksSelect<false> | NotebooksSelect<true>;
+    'note-pages': NotePagesSelect<false> | NotePagesSelect<true>;
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
@@ -317,9 +321,56 @@ export interface Journal {
   year: number;
   title: string;
   subtitle?: string | null;
-  coverColor: 'navy' | 'forest' | 'burgundy' | 'charcoal';
+  coverColor: 'navy' | 'forest' | 'burgundy' | 'charcoal' | 'umber' | 'slate';
+  pattern: 'cloth' | 'plaid' | 'pinstripe' | 'dots' | 'marble' | 'diamond';
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notebooks".
+ */
+export interface Notebook {
+  id: number;
+  title: string;
+  coverColor: 'navy' | 'forest' | 'burgundy' | 'charcoal' | 'umber' | 'slate';
+  pattern: 'cloth' | 'plaid' | 'pinstripe' | 'dots' | 'marble' | 'diamond';
+  position?: number | null;
+  archived?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "note-pages".
+ */
+export interface NotePage {
+  id: number;
+  icon?: string | null;
+  title?: string | null;
+  notebook: number | Notebook;
+  parent?: (number | null) | NotePage;
+  position?: number | null;
+  /**
+   * Notion 式編輯器的區塊資料（在前台編輯）
+   */
+  content?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * 儲存內容時自動產生
+   */
+  plainText?: string | null;
+  editedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+  deletedAt?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -418,6 +469,14 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'journals';
         value: number | Journal;
+      } | null)
+    | ({
+        relationTo: 'notebooks';
+        value: number | Notebook;
+      } | null)
+    | ({
+        relationTo: 'note-pages';
+        value: number | NotePage;
       } | null)
     | ({
         relationTo: 'toefl-scores';
@@ -554,8 +613,39 @@ export interface JournalsSelect<T extends boolean = true> {
   title?: T;
   subtitle?: T;
   coverColor?: T;
+  pattern?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notebooks_select".
+ */
+export interface NotebooksSelect<T extends boolean = true> {
+  title?: T;
+  coverColor?: T;
+  pattern?: T;
+  position?: T;
+  archived?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "note-pages_select".
+ */
+export interface NotePagesSelect<T extends boolean = true> {
+  icon?: T;
+  title?: T;
+  notebook?: T;
+  parent?: T;
+  position?: T;
+  content?: T;
+  plainText?: T;
+  editedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  deletedAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
