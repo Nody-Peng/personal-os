@@ -4,8 +4,10 @@ import { BlockEditor } from '@/components/editor/BlockEditor'
 import { TaskList } from '@/components/tasks/TaskList'
 import { addDays, daysBetween, formatDayLong, formatDayShort, isoWeek, weekStart, weekdayOf } from '@/lib/day'
 import { PLAN_SLOTS, TOEFL_SKILLS, labelOf, type ToeflSkill } from '@/lib/options'
-import { getImportantTasks, getLogsBetween, getSelectedIdea, getSettings, getWeeklyTasks, planWeek } from '@/lib/queries'
+import { getHabits, getImportantTasks, getLogsBetween, getSettings, getWeekTheme, getWeeklyTasks, habitIdsOf, habitsForPeriod, planWeek } from '@/lib/queries'
 import type { Session } from '@/lib/session'
+import { currentMonday, getCurrentTheme } from '@/lib/weekThemes'
+import { WeekReview } from '@/components/week/WeekReview'
 import type { DailyLog } from '@/payload-types'
 import { Collapsible } from './Collapsible'
 import { DayLogProvider, EMPTY_LOG, type DayLog } from './DayLogProvider'
@@ -19,8 +21,7 @@ const WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 function toDayLog(log: DailyLog | undefined | null): DayLog {
   if (!log) return EMPTY_LOG
   return {
-    morningListening: log.morningListening ?? false,
-    gym: log.gym ?? false,
+    habitsDone: habitIdsOf(log),
     toeflMinutes: log.toeflMinutes ?? 0,
     toeflSkills: (log.toeflSkills ?? []) as ToeflSkill[],
     themeMinutes: log.themeMinutes ?? 0,
@@ -38,20 +39,24 @@ export async function DayView({ session, day, today }: { session: Session; day: 
   const monday = weekStart(day)
   const nextDay = addDays(day, 1)
 
-  const [settings, weekLogs, nextLogs, important, weekly, theme] = await Promise.all([
+  const [settings, weekLogs, nextLogs, important, weekly, theme, allHabits] = await Promise.all([
     getSettings(session),
     getLogsBetween(session, monday, addDays(monday, 6)),
     getLogsBetween(session, nextDay, nextDay),
     getImportantTasks(session, day, nextDay),
     getWeeklyTasks(session, [monday]),
-    getSelectedIdea(session),
+    monday === currentMonday() ? getCurrentTheme(session) : getWeekTheme(session, monday),
+    getHabits(session, true),
   ])
+  // Today shows the active habits; a past day also shows archived ones it used.
+  const dayHabits = allHabits.filter((h) => h.active || habitIdsOf(weekLogs.find((l) => l.date === day)).includes(h.id))
+  const weekHabits = habitsForPeriod(allHabits, weekLogs)
 
   const log = weekLogs.find((l) => l.date === day)
   const week: WeekDay[] = WEEK_LABELS.map((label, i) => {
     const date = addDays(monday, i)
     const l = weekLogs.find((x) => x.date === date)
-    return { date, label, listening: l?.morningListening ?? false, gym: l?.gym ?? false, toeflMinutes: l?.toeflMinutes ?? 0 }
+    return { date, label, habitsDone: habitIdsOf(l), toeflMinutes: l?.toeflMinutes ?? 0 }
   })
 
   const slot = settings.weekPlan[weekdayOf(day)]
@@ -64,6 +69,7 @@ export async function DayView({ session, day, today }: { session: Session; day: 
   const activeImportant = todayImportant.filter((t) => t.status !== 'migrated').length
   const doneWeekly = weekly.filter((t) => t.status === 'done').length
   const isToday = day === today
+  const isSunday = weekdayOf(day) === 'sun'
 
   return (
     <DayLogProvider key={day} day={day} initial={toDayLog(log)}>
@@ -127,7 +133,14 @@ export async function DayView({ session, day, today }: { session: Session; day: 
         </section>
 
         <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 3 } as React.CSSProperties}>
-          <TrackerPanel planLabel={labelOf(PLAN_SLOTS, slot)} planSkill={planSkill} themeTitle={theme?.title ?? null} />
+          <TrackerPanel
+            planLabel={labelOf(PLAN_SLOTS, slot)}
+            planSkill={planSkill}
+            themeTitle={theme?.title ?? null}
+            weekHref={`/journal/week/${monday}`}
+            habits={dayHabits}
+            allHabits={allHabits}
+          />
         </section>
 
         <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 4 } as React.CSSProperties}>
@@ -140,7 +153,24 @@ export async function DayView({ session, day, today }: { session: Session; day: 
           />
         </section>
 
-        <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 5 } as React.CSSProperties}>
+        {isSunday && (
+          <section className="card rise border-ink-strong/20 p-5 md:col-span-6 md:p-6" style={{ '--i': 5 } as React.CSSProperties}>
+            <SectionHead
+              title="週日統整"
+              meta={`第 ${isoWeek(day)} 週`}
+              action={
+                <Link href={`/journal/week/${monday}`} className="flex items-center gap-1 text-sm text-accent hover:underline">
+                  整週筆記
+                  <ArrowRight size={14} />
+                </Link>
+              }
+            />
+            <p className="mb-4 text-sm text-muted">這裡寫的和週筆記是同一份，兩邊會同步。</p>
+            <WeekReview session={session} monday={monday} />
+          </section>
+        )}
+
+        <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 6 } as React.CSSProperties}>
           <Collapsible
             title={isToday ? '安排明天' : '安排隔天'}
             hint={`${formatDayShort(nextDay)}${nextImportant.length ? ` · ${nextImportant.filter((t) => t.status !== 'migrated').length} 件 Important` : ''}`}
@@ -158,7 +188,7 @@ export async function DayView({ session, day, today }: { session: Session; day: 
         </section>
 
         <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 6 } as React.CSSProperties}>
-          <LiveWeekStrip days={week} targets={{ toeflHours: settings.toeflHoursTarget, gym: settings.gymTarget }} />
+          <LiveWeekStrip days={week} habits={weekHabits} toeflHoursTarget={settings.toeflHoursTarget} />
         </section>
       </div>
     </DayLogProvider>

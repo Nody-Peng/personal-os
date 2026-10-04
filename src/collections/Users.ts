@@ -11,6 +11,9 @@ export const Users: CollectionConfig = {
   },
   auth: {
     tokenExpiration: 60 * 60 * 24 * 30, // stay signed in on the phone for 30 days
+    // The site is public: lock the account for 10 minutes after 5 wrong passwords.
+    maxLoginAttempts: 5,
+    lockTime: 10 * 60 * 1000,
   },
   access: {
     read: authenticated,

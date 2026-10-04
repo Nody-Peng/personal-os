@@ -31,7 +31,7 @@ export const WeeklyReviews: CollectionConfig = {
       type: 'json',
       admin: { description: 'Notion 式編輯器的區塊資料（在前台編輯）' },
     },
-    { name: 'nextTheme', label: '下週主題', type: 'relationship', relationTo: 'ideas' },
+    { name: 'theme', label: '本週主題', type: 'relationship', relationTo: 'ideas' },
     { name: 'themeReason', label: '選擇原因', type: 'textarea' },
   ],
 }

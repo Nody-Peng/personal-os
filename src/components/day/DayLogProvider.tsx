@@ -6,8 +6,7 @@ import type { ToeflSkill } from '@/lib/options'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 
 export type DayLog = {
-  morningListening: boolean
-  gym: boolean
+  habitsDone: number[]
   toeflMinutes: number
   toeflSkills: ToeflSkill[]
   themeMinutes: number
@@ -18,8 +17,7 @@ export type DayLog = {
 }
 
 export const EMPTY_LOG: DayLog = {
-  morningListening: false,
-  gym: false,
+  habitsDone: [],
   toeflMinutes: 0,
   toeflSkills: [],
   themeMinutes: 0,

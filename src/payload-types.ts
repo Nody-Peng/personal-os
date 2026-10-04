@@ -69,6 +69,7 @@ export interface Config {
   collections: {
     'daily-logs': DailyLog;
     tasks: Task;
+    habits: Habit;
     'weekly-reviews': WeeklyReview;
     'monthly-notes': MonthlyNote;
     journals: Journal;
@@ -84,6 +85,7 @@ export interface Config {
   collectionsSelect: {
     'daily-logs': DailyLogsSelect<false> | DailyLogsSelect<true>;
     tasks: TasksSelect<false> | TasksSelect<true>;
+    habits: HabitsSelect<false> | HabitsSelect<true>;
     'weekly-reviews': WeeklyReviewsSelect<false> | WeeklyReviewsSelect<true>;
     'monthly-notes': MonthlyNotesSelect<false> | MonthlyNotesSelect<true>;
     journals: JournalsSelect<false> | JournalsSelect<true>;
@@ -143,8 +145,7 @@ export interface DailyLog {
    * YYYY-MM-DD（台灣時間）
    */
   date: string;
-  morningListening?: boolean | null;
-  gym?: boolean | null;
+  habitsDone?: (number | Habit)[] | null;
   toeflMinutes?: number | null;
   toeflSkills?: ('speaking' | 'writing' | 'reading' | 'listening' | 'vocab')[] | null;
   themeMinutes?: number | null;
@@ -164,6 +165,20 @@ export interface DailyLog {
     | number
     | boolean
     | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "habits".
+ */
+export interface Habit {
+  id: number;
+  name: string;
+  icon: 'headphones' | 'barbell' | 'drop' | 'book' | 'run' | 'moon' | 'leaf' | 'pill' | 'pencil' | 'check';
+  weeklyTarget: number;
+  position?: number | null;
+  active?: boolean | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -235,7 +250,7 @@ export interface WeeklyReview {
     | number
     | boolean
     | null;
-  nextTheme?: (number | null) | Idea;
+  theme?: (number | null) | Idea;
   themeReason?: string | null;
   updatedAt: string;
   createdAt: string;
@@ -389,6 +404,10 @@ export interface PayloadLockedDocument {
         value: number | Task;
       } | null)
     | ({
+        relationTo: 'habits';
+        value: number | Habit;
+      } | null)
+    | ({
         relationTo: 'weekly-reviews';
         value: number | WeeklyReview;
       } | null)
@@ -460,8 +479,7 @@ export interface PayloadMigration {
  */
 export interface DailyLogsSelect<T extends boolean = true> {
   date?: T;
-  morningListening?: T;
-  gym?: T;
+  habitsDone?: T;
   toeflMinutes?: T;
   toeflSkills?: T;
   themeMinutes?: T;
@@ -494,12 +512,25 @@ export interface TasksSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "habits_select".
+ */
+export interface HabitsSelect<T extends boolean = true> {
+  name?: T;
+  icon?: T;
+  weeklyTarget?: T;
+  position?: T;
+  active?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "weekly-reviews_select".
  */
 export interface WeeklyReviewsSelect<T extends boolean = true> {
   weekStart?: T;
   review?: T;
-  nextTheme?: T;
+  theme?: T;
   themeReason?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -646,7 +677,6 @@ export interface Setting {
     | null;
   weeklyTargets?: {
     toeflHours?: number | null;
-    gymSessions?: number | null;
   };
   weekPlan: {
     mon: 'speaking' | 'writing' | 'reading' | 'listening' | 'vocab' | 'practice' | 'rest';
@@ -680,7 +710,6 @@ export interface SettingsSelect<T extends boolean = true> {
     | T
     | {
         toeflHours?: T;
-        gymSessions?: T;
       };
   weekPlan?:
     | T

@@ -6,6 +6,8 @@ import { DAY_PATTERN, MONTH_PATTERN, addDays, weekStart } from '@/lib/day'
 import { requireActionSession } from '@/lib/session'
 import { MAX_IMPORTANT_PER_DAY, type TaskKind, type TaskStatus } from '@/lib/tasks'
 import { toTaskItem, type TaskDetail, type TaskItem } from '@/lib/taskItems'
+import { HABIT_ICONS, MAX_ACTIVE_HABITS, type HabitIconKey } from '@/lib/habits'
+import { currentMonday, writeWeekTheme } from '@/lib/weekThemes'
 
 const optionalDay = (value: unknown): string | null => {
   if (value == null || value === '') return null
@@ -164,7 +166,7 @@ export async function getTask(id: number): Promise<ActionResult<TaskDetail>> {
 
 // ---------------------------------------------------------------- week notes
 
-export type WeekNotePatch = Partial<{ review: unknown[] | null; nextTheme: number | null; themeReason: string }>
+export type WeekNotePatch = Partial<{ review: unknown[] | null; themeReason: string }>
 
 export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promise<ActionResult> {
   try {
@@ -172,7 +174,6 @@ export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promis
     const { payload, user } = await requireActionSession()
     const data: WeekNotePatch = {}
     if ('review' in patch) data.review = cleanBlocks(patch.review)
-    if ('nextTheme' in patch) data.nextTheme = patch.nextTheme == null ? null : Number(patch.nextTheme)
     if ('themeReason' in patch) data.themeReason = cleanText(patch.themeReason, 2000)
 
     const { docs } = await payload.find({
@@ -212,6 +213,94 @@ export async function saveMonthNote(month: string, review: unknown[] | null): Pr
     } else {
       await payload.create({ collection: 'monthly-notes', data: { month, ...data }, user, overrideAccess: false })
     }
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// ---------------------------------------------------------------- week theme
+
+/** Set any week's theme; for the current week it also becomes the active idea. */
+export async function setWeekTheme(monday: string, ideaId: number | null): Promise<ActionResult> {
+  try {
+    if (!DAY_PATTERN.test(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
+    const session = await requireActionSession()
+    const { payload, user } = session
+    const id = ideaId == null ? null : Number(ideaId)
+    await writeWeekTheme(session, monday, id)
+
+    if (monday === currentMonday()) {
+      if (id) {
+        await payload.update({ collection: 'ideas', id, data: { status: 'selected' }, user, overrideAccess: false })
+      } else {
+        await payload.update({
+          collection: 'ideas',
+          where: { status: { equals: 'selected' } },
+          data: { status: 'inbox' },
+          user,
+          overrideAccess: false,
+        })
+      }
+    }
+    refresh()
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+// -------------------------------------------------------------------- habits
+
+const ICON_VALUES = new Set<string>(HABIT_ICONS.map((i) => i.value))
+
+export type HabitPatch = Partial<{ name: string; icon: HabitIconKey; weeklyTarget: number; active: boolean }>
+
+function cleanHabit(patch: HabitPatch): HabitPatch {
+  const data: HabitPatch = {}
+  if ('name' in patch) {
+    data.name = cleanText(patch.name, 40).trim()
+    if (!data.name) throw new Error('請輸入習慣名稱')
+  }
+  if ('icon' in patch) {
+    if (!patch.icon || !ICON_VALUES.has(patch.icon)) throw new Error('圖示錯誤')
+    data.icon = patch.icon
+  }
+  if ('weeklyTarget' in patch) data.weeklyTarget = Math.min(7, Math.max(1, Math.round(Number(patch.weeklyTarget) || 7)))
+  if ('active' in patch) data.active = Boolean(patch.active)
+  return data
+}
+
+export async function createHabit(input: { name: string; icon: HabitIconKey; weeklyTarget: number }): Promise<ActionResult> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const data = cleanHabit(input)
+    const { totalDocs: active } = await payload.count({
+      collection: 'habits',
+      where: { active: { equals: true } },
+      user,
+      overrideAccess: false,
+    })
+    if (active >= MAX_ACTIVE_HABITS) throw new Error(`每日習慣最多 ${MAX_ACTIVE_HABITS} 項，請先封存一項`)
+    const { totalDocs: all } = await payload.count({ collection: 'habits', user, overrideAccess: false })
+    await payload.create({
+      collection: 'habits',
+      data: { name: data.name!, icon: data.icon ?? 'check', weeklyTarget: data.weeklyTarget ?? 7, active: true, position: all },
+      user,
+      overrideAccess: false,
+    })
+    refresh()
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function updateHabit(id: number, patch: HabitPatch): Promise<ActionResult> {
+  try {
+    const { payload, user } = await requireActionSession()
+    await payload.update({ collection: 'habits', id, data: cleanHabit(patch), user, overrideAccess: false })
+    refresh()
     return { ok: true }
   } catch (error) {
     return fail(error)

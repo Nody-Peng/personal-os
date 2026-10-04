@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import sharp from 'sharp'
 
 import { DailyLogs } from './collections/DailyLogs'
+import { Habits } from './collections/Habits'
 import { Ideas } from './collections/Ideas'
 import { Journals } from './collections/Journals'
 import { MonthlyNotes } from './collections/MonthlyNotes'
@@ -35,7 +36,7 @@ export default buildConfig({
     fallbackLanguage: 'zh-TW',
     supportedLanguages: { 'zh-TW': zhTw, en },
   },
-  collections: [DailyLogs, Tasks, WeeklyReviews, MonthlyNotes, Journals, ToeflScores, Ideas, Users],
+  collections: [DailyLogs, Tasks, Habits, WeeklyReviews, MonthlyNotes, Journals, ToeflScores, Ideas, Users],
   globals: [Settings],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',

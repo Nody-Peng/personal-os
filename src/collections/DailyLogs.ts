@@ -8,7 +8,7 @@ export const DailyLogs: CollectionConfig = {
   labels: { singular: '每日紀錄', plural: '每日紀錄' },
   admin: {
     useAsTitle: 'date',
-    defaultColumns: ['date', 'toeflMinutes', 'gym', 'morningListening', 'energy'],
+    defaultColumns: ['date', 'toeflMinutes', 'habitsDone', 'energy'],
   },
   defaultSort: '-date',
   access: {
@@ -19,8 +19,13 @@ export const DailyLogs: CollectionConfig = {
   },
   fields: [
     dayField({ name: 'date', label: '日期', unique: true }),
-    { name: 'morningListening', label: '早上聽英文', type: 'checkbox', defaultValue: false },
-    { name: 'gym', label: '健身', type: 'checkbox', defaultValue: false },
+    {
+      name: 'habitsDone',
+      label: '完成的每日習慣',
+      type: 'relationship',
+      relationTo: 'habits',
+      hasMany: true,
+    },
     { name: 'toeflMinutes', label: '托福分鐘數', type: 'number', min: 0, defaultValue: 0 },
     {
       name: 'toeflSkills',

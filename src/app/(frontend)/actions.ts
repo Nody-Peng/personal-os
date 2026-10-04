@@ -13,6 +13,7 @@ import {
 import { clampInt, cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
 import { requireActionSession } from '@/lib/session'
 import { SECTIONS, isBand, type Section } from '@/lib/toefl'
+import { currentMonday, storedWeekThemeId, writeWeekTheme } from '@/lib/weekThemes'
 
 export type { ActionResult }
 
@@ -26,8 +27,7 @@ const SCORE_SOURCE_VALUES = values(SCORE_SOURCES)
 // ---------------------------------------------------------------- daily logs
 
 export type DailyLogPatch = Partial<{
-  morningListening: boolean
-  gym: boolean
+  habitsDone: number[]
   toeflMinutes: number
   toeflSkills: ToeflSkill[]
   themeMinutes: number
@@ -41,8 +41,9 @@ export type DailyLogPatch = Partial<{
 /** Keeps only known fields with sane values; the client is never trusted. */
 function cleanLogPatch(patch: DailyLogPatch): DailyLogPatch {
   const out: DailyLogPatch = {}
-  if ('morningListening' in patch) out.morningListening = Boolean(patch.morningListening)
-  if ('gym' in patch) out.gym = Boolean(patch.gym)
+  if ('habitsDone' in patch) {
+    out.habitsDone = [...new Set((patch.habitsDone ?? []).map(Number))].filter((id) => Number.isInteger(id) && id > 0)
+  }
   if ('toeflMinutes' in patch) out.toeflMinutes = clampInt(patch.toeflMinutes, 0, 24 * 60)
   if ('themeMinutes' in patch) out.themeMinutes = clampInt(patch.themeMinutes, 0, 24 * 60)
   if ('toeflSkills' in patch)
@@ -185,8 +186,15 @@ export async function updateIdea(id: number, patch: IdeaPatch): Promise<ActionRe
       data.status = patch.status
     }
     await payload.update({ collection: 'ideas', id, data, user, overrideAccess: false })
-    revalidatePath('/ideas')
-    revalidatePath('/')
+
+    // Keep this week's note in step with the ideas page.
+    if (data.status) {
+      const session = { payload, user }
+      const monday = currentMonday()
+      if (data.status === 'selected') await writeWeekTheme(session, monday, id)
+      else if ((await storedWeekThemeId(session, monday)) === id) await writeWeekTheme(session, monday, null)
+    }
+    revalidatePath('/', 'layout')
     return { ok: true }
   } catch (error) {
     return fail(error)

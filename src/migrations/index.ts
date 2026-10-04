@@ -1,6 +1,9 @@
 import * as migration_20261004_002942_initial from './20261004_002942_initial';
 import * as migration_20261004_021630_journal from './20261004_021630_journal';
 import * as migration_20261004_021657_journal_cleanup from './20261004_021657_journal_cleanup';
+import * as migration_20261004_081129_habits from './20261004_081129_habits';
+import * as migration_20261004_081233_habits_cleanup from './20261004_081233_habits_cleanup';
+import * as migration_20261004_081253_week_theme_cleanup from './20261004_081253_week_theme_cleanup';
 
 export const migrations = [
   {
@@ -16,6 +19,21 @@ export const migrations = [
   {
     up: migration_20261004_021657_journal_cleanup.up,
     down: migration_20261004_021657_journal_cleanup.down,
-    name: '20261004_021657_journal_cleanup'
+    name: '20261004_021657_journal_cleanup',
+  },
+  {
+    up: migration_20261004_081129_habits.up,
+    down: migration_20261004_081129_habits.down,
+    name: '20261004_081129_habits',
+  },
+  {
+    up: migration_20261004_081233_habits_cleanup.up,
+    down: migration_20261004_081233_habits_cleanup.down,
+    name: '20261004_081233_habits_cleanup',
+  },
+  {
+    up: migration_20261004_081253_week_theme_cleanup.up,
+    down: migration_20261004_081253_week_theme_cleanup.down,
+    name: '20261004_081253_week_theme_cleanup'
   },
 ];

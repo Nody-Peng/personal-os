@@ -16,6 +16,9 @@ Single-owner personal platform (daily check-ins, TOEFL progress, learning backlo
 - Option lists shared by schema and UI are in `src/lib/options.ts`.
 - **Journal**: daily IMPORTANT items (max 3/day) and weekly to-dos are one `tasks` collection (`src/lib/tasks.ts`); unfinished IMPORTANT items are migrated with `moveTaskToNextDay` (original keeps status `migrated`). Journal server actions live in `src/app/(frontend)/journal-actions.ts`.
 - **Rich text** (task bodies, daily note, week/month reviews) is BlockNote JSON stored in Payload `json` fields, edited with `components/editor/BlockEditor` (client-only, autosaves). Use `lib/blocks.ts` to read plain text.
+- **Habits** are a `habits` collection (max 4 active; archive instead of delete so history stays); a day stores ticked habits in `daily-logs.habitsDone`. Use `habitIdsOf` / `habitsForPeriod` from `lib/queries.ts`.
+- **Week themes** live on each week note (`weekly-reviews.theme`); the current week's theme is mirrored as idea status `selected` (`lib/weekThemes.ts`, `getCurrentTheme`).
+- **Login** is the custom `/login` page (Payload REST login); `/admin/login` remains for the admin. Use `safeRedirect` for any post-login target.
 - The task side panel is URL-driven (`?task=<id>`, `lib/useTaskPeek.ts`); the month calendar opens week notes with `?week=<monday>`.
 - **TOEFL scores use the new (Jan 2026) scale only**: sections 1–6 in 0.5 steps, overall = average of four sections rounded to nearest 0.5, computed in the `toefl-scores` hook. All scoring logic and the ETS concordance (CEFR, old 0–120 range) live in `src/lib/toefl.ts`; never store 0–120 scores.
 - **Schema changes**: run `npm run generate:types`, then `npm run payload migrate:create <name>` and commit `src/migrations/*` (production applies them via `prodMigrations`).

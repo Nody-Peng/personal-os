@@ -13,11 +13,16 @@ export async function getSession(): Promise<Session | null> {
   return user ? { payload, user: user as User } : null
 }
 
-/** For pages: sends visitors to the Payload login and back to `returnTo`. */
+/** For pages: sends visitors to the login page and back to `returnTo`. */
 export async function requireSession(returnTo: string): Promise<Session> {
   const session = await getSession()
-  if (!session) redirect(`/admin/login?redirect=${encodeURIComponent(returnTo)}`)
+  if (!session) redirect(`/login?redirect=${encodeURIComponent(returnTo)}`)
   return session
+}
+
+/** Only same-site paths are allowed after login (no open redirects). */
+export function safeRedirect(target: string | null | undefined): string {
+  return target && target.startsWith('/') && !target.startsWith('//') && !target.startsWith('/\\') ? target : '/'
 }
 
 /** For server actions: never trust the caller, always re-check the cookie. */

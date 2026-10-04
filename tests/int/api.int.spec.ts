@@ -92,6 +92,25 @@ describe('ideas', () => {
     ).rejects.toThrow(/不能晚於/)
   })
 
+  it('keeps at most four active habits; archived ones free a slot', async () => {
+    const existing = await payload.find({ collection: 'habits', where: { active: { equals: true } } })
+    const ids: number[] = []
+    try {
+      for (let i = existing.totalDocs; i < 4; i++) {
+        ids.push((await payload.create({ collection: 'habits', data: { name: `test ${i}`, icon: 'check', weeklyTarget: 7 } })).id)
+      }
+      await expect(
+        payload.create({ collection: 'habits', data: { name: 'fifth', icon: 'drop', weeklyTarget: 7 } }),
+      ).rejects.toThrow(/最多 4 項/)
+
+      const archived = await payload.create({ collection: 'habits', data: { name: 'archived', icon: 'drop', weeklyTarget: 7, active: false } })
+      ids.push(archived.id)
+      await expect(payload.update({ collection: 'habits', id: archived.id, data: { active: true } })).rejects.toThrow(/最多 4 項/)
+    } finally {
+      for (const id of ids) await payload.delete({ collection: 'habits', id })
+    }
+  })
+
   it('blocks anonymous access when access control is enforced', async () => {
     await expect(
       payload.find({ collection: 'daily-logs', overrideAccess: false }),

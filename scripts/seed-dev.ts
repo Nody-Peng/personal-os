@@ -31,6 +31,15 @@ if (process.argv.includes('--demo')) {
   const monday = weekStart(today)
   const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(monday, i)).filter((d) => d < today)
   const minutes = [60, 45, 60, 30, 75, 90]
+
+  // Production gets these from a migration; the dev database is pushed directly.
+  if (!(await payload.count({ collection: 'habits' })).totalDocs) {
+    await payload.create({ collection: 'habits', data: { name: '早上聽英文', icon: 'headphones', weeklyTarget: 5, position: 0, active: true } })
+    await payload.create({ collection: 'habits', data: { name: '健身', icon: 'barbell', weeklyTarget: 3, position: 1, active: true } })
+    await payload.create({ collection: 'habits', data: { name: '喝水 2000ml', icon: 'drop', weeklyTarget: 7, position: 2, active: true } })
+  }
+  const habitIds = (await payload.find({ collection: 'habits', sort: 'position' })).docs.map((h) => h.id)
+
   for (const [i, date] of days.entries()) {
     const found = await payload.find({ collection: 'daily-logs', where: { date: { equals: date } } })
     if (found.docs.length) continue
@@ -38,8 +47,7 @@ if (process.argv.includes('--demo')) {
       collection: 'daily-logs',
       data: {
         date,
-        morningListening: i % 3 !== 2,
-        gym: i % 2 === 0,
+        habitsDone: habitIds.filter((_, h) => (h === 0 ? i % 3 !== 2 : h === 1 ? i % 2 === 0 : i % 4 !== 3)),
         toeflMinutes: minutes[i % minutes.length],
         toeflSkills: [i % 2 ? 'writing' : 'speaking'],
         energy: 3 + (i % 3 === 0 ? 1 : 0),

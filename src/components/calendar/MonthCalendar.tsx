@@ -2,9 +2,11 @@ import { Check, Flag } from '@phosphor-icons/react/dist/ssr'
 import Link from 'next/link'
 import { layoutWeekBars } from '@/lib/calendar'
 import { addDays, isoWeek, monthOf } from '@/lib/day'
+import { HabitMark } from '@/components/habits/HabitIcon'
+import type { HabitItem } from '@/lib/habits'
 import type { TaskItem } from '@/lib/taskItems'
 
-type DayInfo = { logged: boolean; gym: boolean; listening: boolean }
+type DayInfo = { logged: boolean; habitsDone: number[] }
 
 type Props = {
   month: string // YYYY-MM
@@ -16,13 +18,14 @@ type Props = {
   dated: TaskItem[]
   weekly: TaskItem[]
   days: Record<string, DayInfo>
+  habits: HabitItem[]
 }
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 const dayHref = (day: string, today: string) => (day === today ? '/' : `/journal/day/${day}`)
 
 /** Wall-calendar month: IMPORTANT per day, period bars, week notes on the left. */
-export function MonthCalendar({ month, weeks, today, basePath, openWeek, important, dated, weekly, days }: Props) {
+export function MonthCalendar({ month, weeks, today, basePath, openWeek, important, dated, weekly, days, habits }: Props) {
   const spans = dated
     .filter((t): t is TaskItem & { startDate: string; endDate: string } => Boolean(t.startDate && t.endDate))
     .filter((t) => t.status !== 'migrated')
@@ -96,8 +99,9 @@ export function MonthCalendar({ month, weeks, today, basePath, openWeek, importa
                       {Number(day.slice(8))}
                     </Link>
                     <span className="hidden gap-0.5 md:flex" aria-hidden>
-                      {info?.listening && <span className="size-1.5 rounded-full bg-ink-strong" />}
-                      {info?.gym && <span className="size-1.5 rounded-[2px] bg-ink-strong" />}
+                      {habits.map((h, idx) =>
+                        info?.habitsDone.includes(h.id) ? <HabitMark key={h.id} index={idx} on size="size-1.5" /> : null,
+                      )}
                     </span>
                   </div>
                   <div className="relative min-w-0 px-1 pt-1 pb-2 md:px-2" style={{ gridColumn: i + 2, gridRow: '-2 / -1' }}>

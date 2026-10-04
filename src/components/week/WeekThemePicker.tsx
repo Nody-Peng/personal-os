@@ -1,19 +1,23 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { updateIdea } from '@/app/(frontend)/actions'
-import { saveWeekNote } from '@/app/(frontend)/journal-actions'
+import { saveWeekNote, setWeekTheme } from '@/app/(frontend)/journal-actions'
 
 type Option = { id: number; title: string; total: number }
 
-/** Sunday decision: pick next week's theme from the backlog, and say why. */
+/** Pick the theme (23:00–24:00 block) for one week, and say why. */
 export function WeekThemePicker({
   monday,
+  label,
+  hint,
   options,
   initialTheme,
   initialReason,
 }: {
+  /** The week whose theme this sets. */
   monday: string
+  label: string
+  hint: string
   options: Option[]
   initialTheme: number | null
   initialReason: string
@@ -21,17 +25,18 @@ export function WeekThemePicker({
   const [theme, setTheme] = useState(initialTheme)
   const [reason, setReason] = useState(initialReason)
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
   const [, startTransition] = useTransition()
   const savedReason = useRef(initialReason)
 
   const choose = (value: string) => {
     const id = value ? Number(value) : null
     setTheme(id)
+    setSaved(false)
     startTransition(async () => {
-      const saved = await saveWeekNote(monday, { nextTheme: id })
-      // The chosen idea becomes the active theme straight away.
-      const promoted = id ? await updateIdea(id, { status: 'selected' }) : { ok: true as const }
-      setError(!saved.ok ? saved.error : !promoted.ok ? promoted.error : null)
+      const result = await setWeekTheme(monday, id)
+      setError(result.ok ? null : result.error)
+      setSaved(result.ok)
     })
   }
 
@@ -44,21 +49,25 @@ export function WeekThemePicker({
     })
   }
 
+  // Keep the current choice listed even if it is no longer in the backlog.
+  const listed = theme && !options.some((o) => o.id === theme) ? [{ id: theme, title: '（目前的主題）', total: 0 }, ...options] : options
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className="flex flex-col gap-2">
         <label htmlFor={`theme-${monday}`} className="label">
-          下週主題（23:00–24:00）
+          {label}
         </label>
         <select id={`theme-${monday}`} value={theme ?? ''} onChange={(e) => choose(e.target.value)} className="field">
           <option value="">還沒決定</option>
-          {options.map((o) => (
+          {listed.map((o) => (
             <option key={o.id} value={o.id}>
-              {o.title}（{o.total} 分）
+              {o.title}
+              {o.total ? `（${o.total} 分）` : ''}
             </option>
           ))}
         </select>
-        <p className="text-xs text-muted">清單依想學清單的總分排序；選了會立刻成為目前的主題。</p>
+        <p className="text-xs text-muted">{saved ? '已更新' : hint}</p>
       </div>
       <div className="flex flex-col gap-2">
         <label htmlFor={`reason-${monday}`} className="label">
@@ -66,7 +75,7 @@ export function WeekThemePicker({
         </label>
         <textarea
           id={`reason-${monday}`}
-          rows={3}
+          rows={2}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           onBlur={saveReason}

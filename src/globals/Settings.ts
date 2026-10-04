@@ -86,7 +86,6 @@ export const Settings: GlobalConfig = {
           type: 'row',
           fields: [
             { name: 'toeflHours', label: '托福小時數', type: 'number', defaultValue: 8 },
-            { name: 'gymSessions', label: '健身次數', type: 'number', defaultValue: 3 },
           ],
         },
       ],

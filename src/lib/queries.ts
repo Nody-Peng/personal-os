@@ -1,5 +1,6 @@
 import 'server-only'
 import type { DailyLog, Idea, Journal, MonthlyNote, Setting, ToeflScore, WeeklyReview } from '@/payload-types'
+import type { HabitIconKey, HabitItem } from './habits'
 import { toTaskItem, type TaskItem } from './taskItems'
 import { addDays, daysBetween } from './day'
 import type { Session } from './session'
@@ -11,7 +12,6 @@ export type ResolvedSettings = {
   targetBand: number
   checkpoints: { week: number; target: number }[]
   toeflHoursTarget: number
-  gymTarget: number
   weekPlan: Setting['weekPlan']
 }
 
@@ -24,7 +24,6 @@ export async function getSettings({ payload, user }: Session): Promise<ResolvedS
     targetBand: s.targetBand ?? 5,
     checkpoints: (s.checkpoints ?? []).map(({ week, target }) => ({ week, target })),
     toeflHoursTarget: s.weeklyTargets?.toeflHours ?? 8,
-    gymTarget: s.weeklyTargets?.gymSessions ?? 3,
     weekPlan: s.weekPlan ?? {
       mon: 'speaking',
       tue: 'writing',
@@ -224,4 +223,55 @@ export async function countLoggedDays({ payload, user }: Session, year: number):
     overrideAccess: false,
   })
   return totalDocs
+}
+
+// ------------------------------------------------------------------- habits
+
+/** Active habits by default; with includeArchived, every habit ever made. */
+export async function getHabits({ payload, user }: Session, includeArchived = false): Promise<HabitItem[]> {
+  const { docs } = await payload.find({
+    collection: 'habits',
+    where: includeArchived ? undefined : { active: { equals: true } },
+    sort: ['position', 'id'],
+    pagination: false,
+    user,
+    overrideAccess: false,
+  })
+  return docs.map((h) => ({
+    id: h.id,
+    name: h.name,
+    icon: h.icon as HabitIconKey,
+    weeklyTarget: h.weeklyTarget,
+    active: h.active ?? true,
+  }))
+}
+
+/** Habit ids ticked in a log (relationship values may be ids or docs). */
+export function habitIdsOf(log: DailyLog | null | undefined): number[] {
+  return (log?.habitsDone ?? []).map((h) => (typeof h === 'number' ? h : h.id))
+}
+
+/**
+ * Habits to show for a period: the active ones, plus archived ones that
+ * were ticked in these logs (so old weeks keep their history).
+ */
+export function habitsForPeriod(all: HabitItem[], logs: DailyLog[]): HabitItem[] {
+  const used = new Set(logs.flatMap(habitIdsOf))
+  return all.filter((h) => h.active || used.has(h.id))
+}
+
+// -------------------------------------------------------------- week themes
+
+/** The theme stored on a week's note, if any. */
+export async function getWeekTheme(session: Session, monday: string): Promise<Idea | null> {
+  const review = await session.payload.find({
+    collection: 'weekly-reviews',
+    where: { weekStart: { equals: monday } },
+    limit: 1,
+    depth: 1,
+    user: session.user,
+    overrideAccess: false,
+  })
+  const theme = review.docs[0]?.theme
+  return theme && typeof theme === 'object' ? theme : null
 }

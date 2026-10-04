@@ -1,8 +1,8 @@
 'use client'
 
-import { BookBookmark, ChartLineUp, GearSix, Lightbulb, SunHorizon } from '@phosphor-icons/react'
+import { BookBookmark, ChartLineUp, GearSix, Lightbulb, SignOut, SunHorizon } from '@phosphor-icons/react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 
 const ITEMS = [
   { href: '/', label: '今天', Icon: SunHorizon },
@@ -19,6 +19,13 @@ function isActive(pathname: string, href: string) {
 /** Top bar on desktop, bottom tab bar on phones. */
 export function AppNav() {
   const pathname = usePathname()
+  const router = useRouter()
+
+  const logout = async () => {
+    await fetch('/api/users/logout', { method: 'POST', credentials: 'include' }).catch(() => null)
+    router.replace('/login')
+    router.refresh()
+  }
 
   return (
     <>
@@ -54,6 +61,14 @@ export function AppNav() {
             <GearSix size={18} />
             後台
           </Link>
+          <button
+            type="button"
+            onClick={logout}
+            className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink-strong"
+          >
+            <SignOut size={18} />
+            登出
+          </button>
         </div>
       </header>
 
