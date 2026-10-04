@@ -35,7 +35,7 @@ npm run dev           # 終端機 2：http://localhost:3000
 1. **建立 Supabase 專案**，到 Project Settings → Database → Connection string，複製 **Transaction pooler**（port 6543）的連線字串。
 2. **關閉 Supabase Data API**（Project Settings → Data API），或在 SQL Editor 對所有資料表執行 `alter table ... enable row level security;`。
    Payload 用資料庫擁有者連線，不受影響；但若不關閉，持有 anon key 的人可能透過 Supabase API 讀到資料。
-3. **在 Vercel 匯入這個 repo**，設定環境變數：
+3. **在 Vercel 匯入這個 repo**。伺服器端函式固定跑在東京（`vercel.json` 的 `hnd1`），和 Supabase 的東京區（`ap-northeast-1`）同區，查詢延遲最低。設定環境變數：
    - `DATABASE_URL`：步驟 1 的連線字串（填入密碼）
    - `PAYLOAD_SECRET`：一段夠長的隨機字串（例如 `openssl rand -hex 32` 產生）
 4. 部署後第一次啟動會自動執行 `src/migrations/` 建立資料表。
