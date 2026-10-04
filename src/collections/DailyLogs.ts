@@ -31,7 +31,15 @@ export const DailyLogs: CollectionConfig = {
     },
     { name: 'themeMinutes', label: '本週主題分鐘數', type: 'number', min: 0, defaultValue: 0 },
     { name: 'energy', label: '精力（1–5）', type: 'number', min: 1, max: 5 },
-    { name: 'notes', label: '三行筆記', type: 'textarea' },
-    { name: 'tomorrowTop1', label: '明天最重要的一件事', type: 'text' },
+    // What actually happens in each part of the day.
+    { name: 'morningPlan', label: '早', type: 'textarea' },
+    { name: 'noonPlan', label: '午', type: 'textarea' },
+    { name: 'eveningPlan', label: '晚', type: 'textarea' },
+    {
+      name: 'note',
+      label: 'Note（反思）',
+      type: 'json',
+      admin: { description: 'Notion 式編輯器的區塊資料（在前台編輯）' },
+    },
   ],
 }

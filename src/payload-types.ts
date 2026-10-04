@@ -68,9 +68,12 @@ export interface Config {
   blocks: {};
   collections: {
     'daily-logs': DailyLog;
+    tasks: Task;
+    'weekly-reviews': WeeklyReview;
+    'monthly-notes': MonthlyNote;
+    journals: Journal;
     'toefl-scores': ToeflScore;
     ideas: Idea;
-    'weekly-reviews': WeeklyReview;
     users: User;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
@@ -80,9 +83,12 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     'daily-logs': DailyLogsSelect<false> | DailyLogsSelect<true>;
+    tasks: TasksSelect<false> | TasksSelect<true>;
+    'weekly-reviews': WeeklyReviewsSelect<false> | WeeklyReviewsSelect<true>;
+    'monthly-notes': MonthlyNotesSelect<false> | MonthlyNotesSelect<true>;
+    journals: JournalsSelect<false> | JournalsSelect<true>;
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
-    'weekly-reviews': WeeklyReviewsSelect<false> | WeeklyReviewsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -143,32 +149,94 @@ export interface DailyLog {
   toeflSkills?: ('speaking' | 'writing' | 'reading' | 'listening' | 'vocab')[] | null;
   themeMinutes?: number | null;
   energy?: number | null;
-  notes?: string | null;
-  tomorrowTop1?: string | null;
+  morningPlan?: string | null;
+  noonPlan?: string | null;
+  eveningPlan?: string | null;
+  /**
+   * Notion 式編輯器的區塊資料（在前台編輯）
+   */
+  note?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "toefl-scores".
+ * via the `definition` "tasks".
  */
-export interface ToeflScore {
+export interface Task {
   id: number;
+  title: string;
+  kind: 'important' | 'weekly';
+  status: 'todo' | 'done' | 'migrated';
+  position?: number | null;
   /**
    * YYYY-MM-DD（台灣時間）
    */
-  date: string;
-  type: 'mini' | 'section' | 'full' | 'official';
-  source?: ('ets' | 'third-party' | 'ai') | null;
-  reading?: number | null;
-  listening?: number | null;
-  speaking?: number | null;
-  writing?: number | null;
+  day?: string | null;
   /**
-   * 四科都有級分時自動計算
+   * YYYY-MM-DD（台灣時間）
    */
-  overall?: number | null;
-  notes?: string | null;
+  weekStart?: string | null;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  dueDate?: string | null;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  startDate?: string | null;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  endDate?: string | null;
+  /**
+   * Notion 式編輯器的區塊資料（在前台編輯）
+   */
+  body?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  migratedFrom?: (number | null) | Task;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "weekly-reviews".
+ */
+export interface WeeklyReview {
+  id: number;
+  /**
+   * 該週的週一，YYYY-MM-DD
+   */
+  weekStart: string;
+  /**
+   * Notion 式編輯器的區塊資料（在前台編輯）
+   */
+  review?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  nextTheme?: (number | null) | Idea;
+  themeReason?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -202,24 +270,63 @@ export interface Idea {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "weekly-reviews".
+ * via the `definition` "monthly-notes".
  */
-export interface WeeklyReview {
+export interface MonthlyNote {
   id: number;
   /**
-   * 該週的週一，YYYY-MM-DD
+   * YYYY-MM
    */
-  weekStart: string;
-  reflection?: string | null;
-  nextTheme?: (number | null) | Idea;
-  themeReason?: string | null;
-  keyResults?:
+  month: string;
+  /**
+   * Notion 式編輯器的區塊資料（在前台編輯）
+   */
+  review?:
     | {
-        text: string;
-        done?: boolean | null;
-        id?: string | null;
-      }[]
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
     | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "journals".
+ */
+export interface Journal {
+  id: number;
+  year: number;
+  title: string;
+  subtitle?: string | null;
+  coverColor: 'navy' | 'forest' | 'burgundy' | 'charcoal';
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toefl-scores".
+ */
+export interface ToeflScore {
+  id: number;
+  /**
+   * YYYY-MM-DD（台灣時間）
+   */
+  date: string;
+  type: 'mini' | 'section' | 'full' | 'official';
+  source?: ('ets' | 'third-party' | 'ai') | null;
+  reading?: number | null;
+  listening?: number | null;
+  speaking?: number | null;
+  writing?: number | null;
+  /**
+   * 四科都有級分時自動計算
+   */
+  overall?: number | null;
+  notes?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -278,16 +385,28 @@ export interface PayloadLockedDocument {
         value: number | DailyLog;
       } | null)
     | ({
+        relationTo: 'tasks';
+        value: number | Task;
+      } | null)
+    | ({
+        relationTo: 'weekly-reviews';
+        value: number | WeeklyReview;
+      } | null)
+    | ({
+        relationTo: 'monthly-notes';
+        value: number | MonthlyNote;
+      } | null)
+    | ({
+        relationTo: 'journals';
+        value: number | Journal;
+      } | null)
+    | ({
         relationTo: 'toefl-scores';
         value: number | ToeflScore;
       } | null)
     | ({
         relationTo: 'ideas';
         value: number | Idea;
-      } | null)
-    | ({
-        relationTo: 'weekly-reviews';
-        value: number | WeeklyReview;
       } | null)
     | ({
         relationTo: 'users';
@@ -347,8 +466,63 @@ export interface DailyLogsSelect<T extends boolean = true> {
   toeflSkills?: T;
   themeMinutes?: T;
   energy?: T;
-  notes?: T;
-  tomorrowTop1?: T;
+  morningPlan?: T;
+  noonPlan?: T;
+  eveningPlan?: T;
+  note?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "tasks_select".
+ */
+export interface TasksSelect<T extends boolean = true> {
+  title?: T;
+  kind?: T;
+  status?: T;
+  position?: T;
+  day?: T;
+  weekStart?: T;
+  dueDate?: T;
+  startDate?: T;
+  endDate?: T;
+  body?: T;
+  migratedFrom?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "weekly-reviews_select".
+ */
+export interface WeeklyReviewsSelect<T extends boolean = true> {
+  weekStart?: T;
+  review?: T;
+  nextTheme?: T;
+  themeReason?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "monthly-notes_select".
+ */
+export interface MonthlyNotesSelect<T extends boolean = true> {
+  month?: T;
+  review?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "journals_select".
+ */
+export interface JournalsSelect<T extends boolean = true> {
+  year?: T;
+  title?: T;
+  subtitle?: T;
+  coverColor?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -381,25 +555,6 @@ export interface IdeasSelect<T extends boolean = true> {
   scorePassion?: T;
   total?: T;
   status?: T;
-  updatedAt?: T;
-  createdAt?: T;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "weekly-reviews_select".
- */
-export interface WeeklyReviewsSelect<T extends boolean = true> {
-  weekStart?: T;
-  reflection?: T;
-  nextTheme?: T;
-  themeReason?: T;
-  keyResults?:
-    | T
-    | {
-        text?: T;
-        done?: T;
-        id?: T;
-      };
   updatedAt?: T;
   createdAt?: T;
 }

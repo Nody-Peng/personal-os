@@ -9,6 +9,9 @@ import sharp from 'sharp'
 
 import { DailyLogs } from './collections/DailyLogs'
 import { Ideas } from './collections/Ideas'
+import { Journals } from './collections/Journals'
+import { MonthlyNotes } from './collections/MonthlyNotes'
+import { Tasks } from './collections/Tasks'
 import { ToeflScores } from './collections/ToeflScores'
 import { Users } from './collections/Users'
 import { WeeklyReviews } from './collections/WeeklyReviews'
@@ -32,7 +35,7 @@ export default buildConfig({
     fallbackLanguage: 'zh-TW',
     supportedLanguages: { 'zh-TW': zhTw, en },
   },
-  collections: [DailyLogs, ToeflScores, Ideas, WeeklyReviews, Users],
+  collections: [DailyLogs, Tasks, WeeklyReviews, MonthlyNotes, Journals, ToeflScores, Ideas, Users],
   globals: [Settings],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
