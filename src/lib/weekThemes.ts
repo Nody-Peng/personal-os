@@ -3,6 +3,7 @@ import { logicalDay, weekStart } from './day'
 import type { Idea } from '@/payload-types'
 import { getSelectedIdea, getWeekTheme } from './queries'
 import type { Session } from './session'
+import { upsertOne } from './upsert'
 
 // Each week stores its own theme on its week note. The idea status
 // "selected" mirrors the *current* week's theme so the ideas page and the
@@ -27,12 +28,12 @@ async function findReview({ payload, user }: Session, monday: string) {
 /** Store a week's theme on its week note (creating the note if needed). */
 export async function writeWeekTheme(session: Session, monday: string, themeId: number | null): Promise<void> {
   const { payload, user } = session
-  const review = await findReview(session, monday)
-  if (review) {
-    await payload.update({ collection: 'weekly-reviews', id: review.id, data: { theme: themeId }, user, overrideAccess: false })
-  } else if (themeId !== null) {
-    await payload.create({ collection: 'weekly-reviews', data: { weekStart: monday, theme: themeId }, user, overrideAccess: false })
+  if (themeId !== null) {
+    await upsertOne(session, 'weekly-reviews', { weekStart: { equals: monday } }, { theme: themeId }, { weekStart: monday, theme: themeId })
+    return
   }
+  const review = await findReview(session, monday)
+  if (review) await payload.update({ collection: 'weekly-reviews', id: review.id, data: { theme: null }, user, overrideAccess: false })
 }
 
 /** The current week's theme id as stored on its week note, if any. */

@@ -380,6 +380,11 @@ export interface NotePage {
   kind?: ('page' | 'board' | 'item') | null;
   status?: ('todo' | 'doing' | 'done' | 'archived') | null;
   parentItem?: (number | null) | NotePage;
+  font?: ('default' | 'serif' | 'mono') | null;
+  smallText?: boolean | null;
+  fullWidth?: boolean | null;
+  locked?: boolean | null;
+  favorite?: boolean | null;
   /**
    * YYYY-MM-DD
    */
@@ -710,6 +715,11 @@ export interface NotePagesSelect<T extends boolean = true> {
   kind?: T;
   status?: T;
   parentItem?: T;
+  font?: T;
+  smallText?: T;
+  fullWidth?: T;
+  locked?: T;
+  favorite?: T;
   startDate?: T;
   endDate?: T;
   cover?: T;

@@ -1,6 +1,7 @@
 import type { CollectionConfig, TextField } from 'payload'
 import { authenticated } from '@/access/authenticated'
 import { dayField } from '@/fields/dayField'
+import { isDay } from '@/lib/day'
 import { MAX_IMPORTANT_PER_DAY, TASK_KINDS, TASK_STATUSES } from '@/lib/tasks'
 
 const optionalDay = (name: string, label: string): TextField =>
@@ -8,8 +9,7 @@ const optionalDay = (name: string, label: string): TextField =>
     name,
     label,
     required: false,
-    validate: (value: string | null | undefined) =>
-      !value || /^\d{4}-\d{2}-\d{2}$/.test(value) || '請用 YYYY-MM-DD 格式',
+    validate: (value: string | null | undefined) => !value || isDay(value) || '請用 YYYY-MM-DD 格式',
   })
 
 // One collection for both daily IMPORTANT items (kind=important, tied to a
@@ -64,6 +64,8 @@ export const Tasks: CollectionConfig = {
       label: '從哪一天移過來',
       type: 'relationship',
       relationTo: 'tasks',
+      // A task is copied forward at most once (see moveTaskToNextDay).
+      unique: true,
       admin: { readOnly: true },
     },
   ],
@@ -86,7 +88,8 @@ export const Tasks: CollectionConfig = {
       async ({ data, originalDoc, operation, req }) => {
         const merged = { ...originalDoc, ...data }
         if (merged.kind !== 'important') return data
-        const movingIn = operation === 'create' || merged.day !== originalDoc?.day
+        const revived = originalDoc?.status === 'migrated' && merged.status !== 'migrated'
+        const movingIn = operation === 'create' || merged.day !== originalDoc?.day || revived
         if (!movingIn) return data
         const { totalDocs } = await req.payload.count({
           collection: 'tasks',

@@ -20,6 +20,13 @@ const WEEKDAY_LABELS: Record<Weekday, string> = {
 
 export const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
+/** A real calendar day in YYYY-MM-DD form (2026-02-30 is not). */
+export function isDay(value: unknown): value is string {
+  if (typeof value !== 'string' || !DAY_PATTERN.test(value)) return false
+  const ms = dayToUtcMs(value)
+  return !Number.isNaN(ms) && toDay(ms) === value
+}
+
 /** Wall-clock parts of `instant` in Taiwan. */
 function taipeiParts(instant: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -96,7 +103,19 @@ export function isoWeek(day: string): number {
   return Math.floor(daysBetween(yearStart, thursday) / 7) + 1
 }
 
+/** The year an ISO week belongs to (2025-12-29 is in week 1 of 2026). */
+export function isoWeekYear(day: string): number {
+  return Number(addDays(weekStart(day), 3).slice(0, 4))
+}
+
 export const MONTH_PATTERN = /^\d{4}-\d{2}$/
+
+/** A real month in YYYY-MM form. */
+export function isMonth(value: unknown): value is string {
+  if (typeof value !== 'string' || !MONTH_PATTERN.test(value)) return false
+  const m = Number(value.slice(5))
+  return m >= 1 && m <= 12
+}
 
 /** "2026-10" */
 export function monthOf(day: string): string {

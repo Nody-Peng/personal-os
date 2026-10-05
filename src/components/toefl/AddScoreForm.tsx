@@ -40,7 +40,15 @@ export function AddScoreForm({ today }: { today: string }) {
   }
 
   return (
-    <form ref={formRef} action={submit} className="grid gap-5">
+    // onSubmit, not action: React resets an action form even when saving fails.
+    <form
+      ref={formRef}
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit(new FormData(e.currentTarget))
+      }}
+      className="grid gap-5"
+    >
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <Field label="日期" htmlFor="score-date">
           <input id="score-date" name="date" type="date" required defaultValue={today} className="field" />

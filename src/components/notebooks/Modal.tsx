@@ -41,7 +41,7 @@ export function Modal({ title, onClose, children, size = 'md', hideTitle = false
 
   return (
     <div className={`fixed inset-0 z-50 flex justify-center ${size === 'lg' ? 'items-end md:items-start md:pt-[12vh]' : 'items-end md:items-center'}`}>
-      <button type="button" aria-label="關閉" tabIndex={-1} onClick={onClose} className="modal-scrim absolute inset-0 bg-ink-strong/25" />
+      <button type="button" aria-label="關閉" tabIndex={-1} onClick={onClose} className="modal-scrim absolute inset-0 bg-scrim" />
       <div
         ref={panel}
         role="dialog"

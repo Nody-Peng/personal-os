@@ -7,6 +7,8 @@ import * as migration_20261004_081253_week_theme_cleanup from './20261004_081253
 import * as migration_20261004_083930_notebooks from './20261004_083930_notebooks';
 import * as migration_20261004_112651_notebooks_v2 from './20261004_112651_notebooks_v2';
 import * as migration_20261004_112659_day_plan_cleanup from './20261004_112659_day_plan_cleanup';
+import * as migration_20261005_152851_task_migrated_from_unique from './20261005_152851_task_migrated_from_unique';
+import * as migration_20261005_153425_page_options from './20261005_153425_page_options';
 
 export const migrations = [
   {
@@ -52,6 +54,16 @@ export const migrations = [
   {
     up: migration_20261004_112659_day_plan_cleanup.up,
     down: migration_20261004_112659_day_plan_cleanup.down,
-    name: '20261004_112659_day_plan_cleanup'
+    name: '20261004_112659_day_plan_cleanup',
+  },
+  {
+    up: migration_20261005_152851_task_migrated_from_unique.up,
+    down: migration_20261005_152851_task_migrated_from_unique.down,
+    name: '20261005_152851_task_migrated_from_unique',
+  },
+  {
+    up: migration_20261005_153425_page_options.up,
+    down: migration_20261005_153425_page_options.down,
+    name: '20261005_153425_page_options'
   },
 ];

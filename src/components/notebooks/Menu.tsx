@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 export type MenuItem = { label: string; icon?: ReactNode; onSelect: () => void; danger?: boolean }
 
@@ -76,35 +77,39 @@ export function Menu({ label, items, className = '', children }: Props) {
       >
         {children}
       </button>
-      {open && pos && (
-        <ul
-          ref={list}
-          role="menu"
-          aria-label={label}
-          className="modal-panel fixed z-[55] rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(17,17,17,0.28)]"
-          style={{ top: pos.top, left: pos.left, width: WIDTH }}
-        >
-          {items.map((item) => (
-            <li key={item.label} role="none">
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setOpen(false)
-                  item.onSelect()
-                }}
-                className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm outline-none hover:bg-sunken focus-visible:bg-sunken ${
-                  item.danger ? 'text-red-ink' : 'text-ink'
-                }`}
-              >
-                <span className="grid size-4 place-items-center text-muted">{item.icon}</span>
-                {item.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* In a portal: an ancestor with a transform or backdrop blur would otherwise be what `fixed` positions against. */}
+      {open &&
+        pos &&
+        createPortal(
+          <ul
+            ref={list}
+            role="menu"
+            aria-label={label}
+            className="pop-in fixed z-[55] rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(17,17,17,0.28)]"
+            style={{ top: pos.top, left: pos.left, width: WIDTH }}
+          >
+            {items.map((item) => (
+              <li key={item.label} role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpen(false)
+                    item.onSelect()
+                  }}
+                  className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm outline-none hover:bg-sunken focus-visible:bg-sunken ${
+                    item.danger ? 'text-red-ink' : 'text-ink'
+                  }`}
+                >
+                  <span className="grid size-4 place-items-center text-muted">{item.icon}</span>
+                  {item.label}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </>
   )
 }

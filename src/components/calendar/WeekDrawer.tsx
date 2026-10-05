@@ -25,7 +25,7 @@ export function WeekDrawer({ closeHref, children }: { closeHref: string; childre
         type="button"
         aria-label="關閉週筆記"
         onClick={() => router.replace(closeHref, { scroll: false })}
-        className="absolute inset-0 bg-ink-strong/15"
+        className="absolute inset-0 bg-scrim"
       />
       <aside className="absolute inset-y-0 right-0 w-full max-w-[720px] overflow-y-auto bg-canvas px-4 pt-4 pb-24 shadow-[0_0_48px_rgba(17,17,17,0.12)] md:border-l md:border-line md:px-6">
         <div className="mb-2 flex justify-end">

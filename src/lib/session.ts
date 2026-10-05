@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation'
 import { getPayload, type Payload } from 'payload'
 import type { User } from '@/payload-types'
 
+export { safeRedirect } from './safeRedirect'
+
 export type Session = { payload: Payload; user: User }
 
 export async function getSession(): Promise<Session | null> {
@@ -18,11 +20,6 @@ export async function requireSession(returnTo: string): Promise<Session> {
   const session = await getSession()
   if (!session) redirect(`/login?redirect=${encodeURIComponent(returnTo)}`)
   return session
-}
-
-/** Only same-site paths are allowed after login (no open redirects). */
-export function safeRedirect(target: string | null | undefined): string {
-  return target && target.startsWith('/') && !target.startsWith('//') && !target.startsWith('/\\') ? target : '/'
 }
 
 /** For server actions: never trust the caller, always re-check the cookie. */

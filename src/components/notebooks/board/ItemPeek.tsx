@@ -1,18 +1,21 @@
 'use client'
 
-import { ArrowsOutSimple, DotsThree, Smiley, Trash, X } from '@phosphor-icons/react'
+import { ArrowsOutSimple, Copy, DotsThree, Smiley, Trash, X } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { getPageDetail, trashPage, updatePage, type PageDetail } from '@/app/(frontend)/notebook-actions'
+import { duplicatePage, getPageDetail, trashPage, updatePage, type PageDetail } from '@/app/(frontend)/notebook-actions'
 import { BlockEditor, SaveStatusText } from '@/components/editor/BlockEditor'
 import { NoteContext } from '@/components/editor/NoteContext'
-import { dropItems, renameItem, useBoard } from '@/lib/boardStore'
+import { dropItems, loadBoard, renameItem, useBoard } from '@/lib/boardStore'
+import { escapeHandledElsewhere } from '@/lib/escape'
+import { rememberPageEdit } from '@/lib/noteCache'
 import { MAX_PAGE_TITLE, UNTITLED } from '@/lib/notes'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 import { IconPicker } from '../IconPicker'
 import { Menu } from '../Menu'
 import { useNoteEditorContext, useNotebook } from '../NotebookShell'
 import { ItemProperties } from './ItemProperties'
+import { NoteIcon } from '../NoteIcon'
 
 /** A board card opened beside the page (Notion's side peek): properties and content. */
 export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
@@ -32,9 +35,9 @@ export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
   }, [id])
 
   useEffect(() => {
-    // Esc closes the peek unless it is closing one of the editor's own menus first.
+    // Esc closes the peek unless it is closing a menu or picker of its own first.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || document.querySelector('.bn-suggestion-menu, [role="menu"], .mantine-Popover-dropdown')) return
+      if (e.key !== 'Escape' || escapeHandledElsewhere()) return
       onClose()
     }
     // Capture phase: decide before a menu closes itself and disappears.
@@ -44,7 +47,7 @@ export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={page?.title || UNTITLED}>
-      <button type="button" aria-label="關閉" onClick={onClose} className="modal-scrim absolute inset-0 bg-ink-strong/15" />
+      <button type="button" aria-label="關閉" onClick={onClose} className="modal-scrim absolute inset-0 bg-scrim" />
       <aside className="peek-in absolute inset-y-0 right-0 flex w-full max-w-[680px] flex-col bg-surface shadow-[0_0_48px_rgba(17,17,17,0.14)] md:border-l md:border-line">
         {loadError && <p className="p-6 text-red-ink">{loadError}</p>}
         {!page && !loadError && <div className="m-6 h-40 animate-pulse rounded-lg bg-sunken" />}
@@ -55,7 +58,7 @@ export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
 }
 
 function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) {
-  const { patchPage } = useNotebook()
+  const { patchPage, openPeek } = useNotebook()
   const board = useBoard(page.boardId ?? 0)
   const note = useNoteEditorContext(page.id)
   const [title, setTitle] = useState(page.title)
@@ -84,6 +87,7 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
     setTitle(next)
     if (page.boardId) renameItem(page.boardId, page.id, { title: next.trim() })
     patchPage(page.id, { title: next.trim() })
+    rememberPageEdit(page.id, { title: next })
     pending.current = next
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(flush, 500)
@@ -93,7 +97,16 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
     setIcon(next)
     if (page.boardId) renameItem(page.boardId, page.id, { icon: next })
     patchPage(page.id, { icon: next })
+    rememberPageEdit(page.id, { icon: next })
     enqueue(() => updatePage(page.id, { icon: next }))
+  }
+
+  const duplicate = async () => {
+    flush()
+    const result = await duplicatePage(page.id)
+    if (!result.ok || !result.data) return setBody({ status: 'error', error: result.ok ? '建立副本失敗' : result.error })
+    if (page.boardId) await loadBoard(page.boardId)
+    openPeek(result.data.id)
   }
 
   const remove = async () => {
@@ -127,7 +140,10 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
         <Menu
           label="頁面選項"
           className="rounded-md p-1.5 text-muted hover:bg-sunken hover:text-ink-strong"
-          items={[{ label: '移到垃圾桶', icon: <Trash size={14} />, onSelect: remove, danger: true }]}
+          items={[
+            { label: '建立副本', icon: <Copy size={14} />, onSelect: () => void duplicate() },
+            { label: '移到垃圾桶', icon: <Trash size={14} />, onSelect: remove, danger: true },
+          ]}
         >
           <DotsThree size={18} weight="bold" />
         </Menu>
@@ -137,7 +153,7 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
         <div className="relative">
           {icon ? (
             <button type="button" onClick={() => setPicking(true)} aria-label="更換圖示" className="-ml-1 mb-1 grid size-12 place-items-center rounded-lg text-4xl leading-none hover:bg-sunken">
-              {icon}
+              <NoteIcon icon={icon} />
             </button>
           ) : (
             <button type="button" onClick={() => setPicking(true)} className="mb-1 flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-faint hover:bg-sunken hover:text-muted">

@@ -8,5 +8,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     include: ['tests/int/**/*.int.spec.ts'],
+    // The files share one database. Run them one at a time so two files don't
+    // both push the schema into an empty database (CREATE TYPE ... already exists).
+    fileParallelism: false,
   },
 })

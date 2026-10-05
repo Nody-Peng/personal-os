@@ -2,7 +2,7 @@
 
 import { ArrowsOutSimple, CalendarBlank, Columns, FileText, Kanban, Plus, Table } from '@phosphor-icons/react'
 import Link from 'next/link'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { updatePage } from '@/app/(frontend)/notebook-actions'
 import { addItem, moveCard, renameBoard, useBoard } from '@/lib/boardStore'
 import { UNTITLED, columnOf, type BoardItem } from '@/lib/notes'
@@ -10,6 +10,7 @@ import { ITEM_STATUSES, type ItemStatus } from '@/lib/options'
 import { reportNoteError } from '@/lib/uploadMedia'
 import { useNotebook } from '../NotebookShell'
 import { COLUMN_TINT, StatusTag, formatRange, statusOf } from './StatusTag'
+import { NoteIcon } from '../NoteIcon'
 
 type View = 'board' | 'table'
 
@@ -46,9 +47,18 @@ export function BoardView({ boardId, embedded = false }: { boardId: number; embe
   )
   const [title, setTitle] = useState<string | null>(null)
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => {
+  const pendingTitle = useRef<string | null>(null)
+  const saveTitle = useCallback(async () => {
     if (titleTimer.current) clearTimeout(titleTimer.current)
-  }, [])
+    titleTimer.current = null
+    const value = pendingTitle.current
+    pendingTitle.current = null
+    if (value == null) return
+    const result = await updatePage(boardId, { title: value })
+    if (!result.ok) reportNoteError(result.error)
+  }, [boardId])
+  // Leaving right after typing still saves the new name.
+  useEffect(() => () => void saveTitle(), [saveTitle])
 
   const create = async (column: ItemStatus) => {
     const result = await addItem(boardId, column)
@@ -60,11 +70,9 @@ export function BoardView({ boardId, embedded = false }: { boardId: number; embe
     setTitle(value)
     renameBoard(boardId, value)
     patchPage(boardId, { title: value.trim() })
+    pendingTitle.current = value
     if (titleTimer.current) clearTimeout(titleTimer.current)
-    titleTimer.current = setTimeout(async () => {
-      const result = await updatePage(boardId, { title: value })
-      if (!result.ok) reportNoteError(result.error)
-    }, 600)
+    titleTimer.current = setTimeout(saveTitle, 600)
   }
 
   if (status === 'loading' && !data) return <div className="my-2 h-40 animate-pulse rounded-xl bg-sunken" aria-label="載入看板" />
@@ -156,7 +164,7 @@ function KanbanView({
   }
 
   return (
-    <div className="-mx-1 overflow-x-auto px-1 pb-2">
+    <div className="-mx-1 snap-x snap-mandatory overflow-x-auto scroll-px-1 px-1 pb-2 md:snap-none">
       <div className="flex min-w-max items-start gap-3">
         {ITEM_STATUSES.map((s) => {
           const cards = columnOf(items, s.value)
@@ -164,7 +172,7 @@ function KanbanView({
           return (
             <div
               key={s.value}
-              className={`w-64 shrink-0 rounded-xl p-2 ${COLUMN_TINT[s.tone]}`}
+              className={`w-[min(16rem,78vw)] shrink-0 snap-start rounded-xl p-2 ${COLUMN_TINT[s.tone]}`}
               onDragOver={(e) => {
                 if (dragging == null) return
                 e.preventDefault()
@@ -210,7 +218,7 @@ function KanbanView({
                     >
                       <span className="flex items-start gap-2">
                         <span className="mt-0.5 grid size-4 shrink-0 place-items-center text-sm leading-none text-muted">
-                          {card.icon || <FileText size={15} />}
+                          <NoteIcon icon={card.icon} fallback={<FileText size={15} />} />
                         </span>
                         <span className={`text-sm font-medium break-words ${card.title ? 'text-ink-strong' : 'text-faint'}`}>
                           {card.title || UNTITLED}
@@ -269,7 +277,7 @@ function TableView({ items, onOpen, onCreate }: { items: BoardItem[]; onOpen: (i
               <td className="py-2 pr-3">
                 <span className="flex items-center gap-2">
                   <span className="grid size-4 shrink-0 place-items-center text-sm leading-none text-muted">
-                    {item.icon || <FileText size={15} />}
+                    <NoteIcon icon={item.icon} fallback={<FileText size={15} />} />
                   </span>
                   <button type="button" className={`truncate text-left font-medium ${item.title ? 'text-ink-strong' : 'text-faint'}`}>
                     {item.title || UNTITLED}

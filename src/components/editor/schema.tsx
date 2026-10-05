@@ -9,21 +9,28 @@ import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blockno
 import { zhTW } from '@blocknote/core/locales'
 import { getDefaultReactSlashMenuItems, type DefaultReactSuggestionItem } from '@blocknote/react'
 import { getMultiColumnSlashMenuItems, withMultiColumn } from '@blocknote/xl-multi-column'
-import { ArrowUpRight, FileText, Info, Kanban, ListBullets } from '@phosphor-icons/react'
+import { ArrowUpRight, BookmarkSimple, FileText, FrameCorners, Info, Kanban, ListBullets } from '@phosphor-icons/react'
 import { BoardBlock } from './blocks/BoardBlock'
+import { BookmarkBlock } from './blocks/BookmarkBlock'
 import { Callout } from './blocks/Callout'
+import { CodeBlock } from './blocks/CodeBlock'
+import { EmbedBlock } from './blocks/EmbedBlock'
 import { PageLink } from './blocks/PageLink'
 import { TableOfContents } from './blocks/TableOfContents'
+import { codeLanguageFor } from './codeLanguages'
 import type { NoteEditorContext } from './NoteContext'
 
 export const editorSchema = withMultiColumn(
   BlockNoteSchema.create({
     blockSpecs: {
       ...defaultBlockSpecs,
+      codeBlock: CodeBlock(),
       callout: Callout(),
       toc: TableOfContents(),
       pageLink: PageLink(),
       board: BoardBlock(),
+      bookmark: BookmarkBlock(),
+      embed: EmbedBlock(),
     },
   }),
 )
@@ -41,11 +48,18 @@ export const multiColumnDictionary = {
  * Notion's markdown shortcuts on top of BlockNote's:
  *   "> "          toggle list (a quote is `" `); in a heading it makes the heading collapsible
  *   "# " … "### " inside a toggle list keeps it collapsible as a heading
+ *   "``` " / "```python " code block (Bash when no language is given)
  */
 export const notionShortcuts = createExtension({
   key: 'notion-shortcuts',
-  runsBefore: ['quote-block-shortcuts', 'heading-shortcuts', 'toggle-list-item-shortcuts'],
+  runsBefore: ['quote-block-shortcuts', 'heading-shortcuts', 'toggle-list-item-shortcuts', 'code-block-keyboard-shortcuts'],
   inputRules: [
+    {
+      find: /^```(.*?)\s$/,
+      replace({ match }) {
+        return { type: 'codeBlock', props: { language: codeLanguageFor(match[1]) }, content: [] }
+      },
+    },
     {
       find: /^>\s$/,
       replace({ editor }) {
@@ -112,6 +126,24 @@ export function slashItems(editor: NoteEditor, note: NoteEditorContext | null): 
       group: '進階',
       icon: icon(ListBullets),
       onItemClick: () => insertOrUpdateBlockForSlashMenu(editor, { type: 'toc' }),
+    } as DefaultReactSuggestionItem,
+    {
+      key: 'bookmark',
+      title: '網頁書籤',
+      subtext: '網址變成有標題、摘要和縮圖的卡片',
+      aliases: ['bookmark', 'web', 'link', 'url', '書籤', '網頁', '網址', '連結'],
+      group: '媒體',
+      icon: icon(BookmarkSimple),
+      onItemClick: () => insertOrUpdateBlockForSlashMenu(editor, { type: 'bookmark' }),
+    } as DefaultReactSuggestionItem,
+    {
+      key: 'embed',
+      title: '嵌入',
+      subtext: 'YouTube、Google 地圖、Google 文件、Figma、Spotify…',
+      aliases: ['embed', 'iframe', 'youtube', 'video', 'map', 'maps', 'figma', 'spotify', '嵌入', '影片', '地圖'],
+      group: '媒體',
+      icon: icon(FrameCorners),
+      onItemClick: () => insertOrUpdateBlockForSlashMenu(editor, { type: 'embed' }),
     } as DefaultReactSuggestionItem,
     ...getMultiColumnSlashMenuItems(anyEditor),
   ]

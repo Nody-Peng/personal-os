@@ -86,7 +86,7 @@ export function ScoreChart({ scores, baseline, target, endWeek, checkpoints }: P
               setActive(null)
             }}
             className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-              view === value ? 'bg-ink-strong font-medium text-white' : 'text-muted hover:bg-sunken hover:text-ink-strong'
+              view === value ? 'bg-ink-strong font-medium text-on-ink' : 'text-muted hover:bg-sunken hover:text-ink-strong'
             }`}
           >
             {label}

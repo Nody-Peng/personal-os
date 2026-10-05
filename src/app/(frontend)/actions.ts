@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { DAY_PATTERN } from '@/lib/day'
+import { isDay } from '@/lib/day'
 import { cleanPlanItems, type PlanItem } from '@/lib/dayParts'
 import {
   IDEA_STATUSES,
@@ -14,6 +14,7 @@ import {
 import { clampInt, cleanBlocks, fail, type ActionResult } from '@/lib/actionUtils'
 import { requireActionSession } from '@/lib/session'
 import { SECTIONS, isBand, type Section } from '@/lib/toefl'
+import { upsertOne } from '@/lib/upsert'
 import { currentMonday, storedWeekThemeId, writeWeekTheme } from '@/lib/weekThemes'
 
 export type { ActionResult }
@@ -59,32 +60,10 @@ function cleanLogPatch(patch: DailyLogPatch): DailyLogPatch {
 
 export async function saveDailyLog(day: string, patch: DailyLogPatch): Promise<ActionResult> {
   try {
-    if (!DAY_PATTERN.test(day)) throw new Error('日期格式錯誤')
-    const { payload, user } = await requireActionSession()
+    if (!isDay(day)) throw new Error('日期格式錯誤')
+    const session = await requireActionSession()
     const data = cleanLogPatch(patch)
-    const { docs } = await payload.find({
-      collection: 'daily-logs',
-      where: { date: { equals: day } },
-      limit: 1,
-      user,
-      overrideAccess: false,
-    })
-    if (docs[0]) {
-      await payload.update({
-        collection: 'daily-logs',
-        id: docs[0].id,
-        data,
-        user,
-        overrideAccess: false,
-      })
-    } else {
-      await payload.create({
-        collection: 'daily-logs',
-        data: { date: day, ...data },
-        user,
-        overrideAccess: false,
-      })
-    }
+    await upsertOne(session, 'daily-logs', { date: { equals: day } }, data, { date: day, ...data })
     revalidatePath('/toefl')
     return { ok: true }
   } catch (error) {
@@ -101,7 +80,7 @@ export async function addScore(formData: FormData): Promise<ActionResult> {
     const type = String(formData.get('type') ?? '')
     const source = String(formData.get('source') ?? 'ets')
 
-    if (!DAY_PATTERN.test(date)) throw new Error('請選擇日期')
+    if (!isDay(date)) throw new Error('請選擇日期')
     if (!SCORE_TYPE_VALUES.has(type)) throw new Error('請選擇類型')
     if (!SCORE_SOURCE_VALUES.has(source)) throw new Error('請選擇來源')
 
@@ -188,12 +167,14 @@ export async function updateIdea(id: number, patch: IdeaPatch): Promise<ActionRe
     }
     await payload.update({ collection: 'ideas', id, data, user, overrideAccess: false })
 
-    // Keep this week's note in step with the ideas page.
+    // Keep this week's note in step with the ideas page. A theme marked done or
+    // dropped stays on its week (week and month reviews list it); only sending
+    // it back to the inbox takes it off.
     if (data.status) {
       const session = { payload, user }
       const monday = currentMonday()
       if (data.status === 'selected') await writeWeekTheme(session, monday, id)
-      else if ((await storedWeekThemeId(session, monday)) === id) await writeWeekTheme(session, monday, null)
+      else if (data.status === 'inbox' && (await storedWeekThemeId(session, monday)) === id) await writeWeekTheme(session, monday, null)
     }
     revalidatePath('/', 'layout')
     return { ok: true }

@@ -6,6 +6,7 @@ import { deletePageForever, listTrash, restorePage, type TrashItem } from '@/app
 import { TRASH_DAYS, UNTITLED } from '@/lib/notes'
 import { Modal } from './Modal'
 import { useNotebook } from './NotebookShell'
+import { NoteIcon } from './NoteIcon'
 
 function ago(iso: string): string {
   const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000)
@@ -61,7 +62,7 @@ export function TrashDialog({ onClose }: { onClose: () => void }) {
         <ul className="divide-y divide-line">
           {items.map((item) => (
             <li key={item.id} className="flex items-center gap-3 px-5 py-3">
-              <span className="grid size-5 shrink-0 place-items-center text-base leading-none text-muted">{item.icon || <FileText size={18} />}</span>
+              <span className="grid size-5 shrink-0 place-items-center text-base leading-none text-muted"><NoteIcon icon={item.icon} fallback={<FileText size={18} />} /></span>
               <span className="min-w-0 flex-1">
                 <span className={`block truncate ${item.title ? 'text-ink-strong' : 'text-muted'}`}>{item.title || UNTITLED}</span>
                 <span className="text-xs text-muted">

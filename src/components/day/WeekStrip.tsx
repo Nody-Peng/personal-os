@@ -54,7 +54,7 @@ export function WeekStrip({ days, today, habits, toeflHoursTarget }: Props) {
                 </div>
                 <span
                   className={`mt-1.5 flex size-7 items-center justify-center rounded-full text-xs ${
-                    isToday ? 'bg-ink-strong font-semibold text-white' : 'text-muted'
+                    isToday ? 'bg-ink-strong font-semibold text-on-ink' : 'text-muted'
                   }`}
                 >
                   {d.label}

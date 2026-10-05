@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { deleteTask, getTask, moveTaskToNextDay, updateTask, type TaskPatch } from '@/app/(frontend)/journal-actions'
 import { BlockEditor, SaveStatusText } from '@/components/editor/BlockEditor'
 import { formatDayLong, formatWeekRange, isoWeek } from '@/lib/day'
+import { escapeHandledElsewhere } from '@/lib/escape'
 import type { TaskDetail } from '@/lib/taskItems'
 import { useTaskPeek } from '@/lib/useTaskPeek'
 import type { SaveStatus } from '@/lib/useSaveQueue'
@@ -37,16 +38,6 @@ function Panel({ id, onClose }: { id: number; onClose: () => void }) {
     }
   }, [id])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    document.addEventListener('keydown', onKey)
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = ''
-    }
-  }, [onClose])
-
   const apply = (patch: TaskPatch) => {
     if (!task) return
     const previous = task
@@ -64,6 +55,30 @@ function Panel({ id, onClose }: { id: number; onClose: () => void }) {
     const title = titleRef.current?.value.trim() ?? ''
     if (task && title && title !== task.title) apply({ title })
   }
+
+  // Closing (Esc, the X, the backdrop) saves a title still being edited.
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = () => {
+      saveTitle()
+      onClose()
+    }
+  })
+  const close = () => closeRef.current()
+
+  useEffect(() => {
+    // Capture phase: decide while an editor menu or picker is still open (it
+    // closes itself on this Esc, and the panel stays).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !escapeHandledElsewhere()) closeRef.current()
+    }
+    document.addEventListener('keydown', onKey, true)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey, true)
+      document.body.style.overflow = ''
+    }
+  }, [])
 
   const setPeriod = (field: 'startDate' | 'endDate', value: string) => {
     if (!task) return
@@ -83,13 +98,13 @@ function Panel({ id, onClose }: { id: number; onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={task?.title ?? '任務'}>
-      <button type="button" aria-label="關閉" onClick={onClose} className="absolute inset-0 bg-ink-strong/20 backdrop-blur-[1px]" />
-      <aside className="absolute inset-y-0 right-0 flex w-full max-w-[640px] flex-col bg-surface shadow-[0_0_48px_rgba(17,17,17,0.12)] md:border-l md:border-line">
+      <button type="button" aria-label="關閉" onClick={close} className="modal-scrim absolute inset-0 bg-scrim backdrop-blur-[1px]" />
+      <aside className="peek-in absolute inset-y-0 right-0 flex w-full max-w-[640px] flex-col bg-surface shadow-[0_0_48px_rgba(17,17,17,0.12)] md:border-l md:border-line">
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
           <p className="truncate text-xs text-muted">{where}</p>
           <div className="flex items-center gap-3">
             <SaveStatusText status={bodyStatus.status} error={bodyStatus.error} />
-            <button type="button" onClick={onClose} aria-label="關閉" className="rounded-md p-1.5 text-muted hover:bg-sunken hover:text-ink-strong">
+            <button type="button" onClick={close} aria-label="關閉" className="rounded-md p-1.5 text-muted hover:bg-sunken hover:text-ink-strong">
               <X size={18} />
             </button>
           </div>

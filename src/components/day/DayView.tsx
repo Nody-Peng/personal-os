@@ -3,15 +3,17 @@ import Link from 'next/link'
 import { BlockEditor } from '@/components/editor/BlockEditor'
 import { TaskList } from '@/components/tasks/TaskList'
 import { cleanPlanItems } from '@/lib/dayParts'
-import { addDays, daysBetween, formatDayLong, formatDayShort, isoWeek, weekStart, weekdayOf } from '@/lib/day'
+import { addDays, daysBetween, formatDayLong, formatDayShort, isoWeek, isoWeekYear, weekStart, weekdayOf } from '@/lib/day'
 import { PLAN_SLOTS, TOEFL_SKILLS, labelOf, type ToeflSkill } from '@/lib/options'
 import { getHabits, getImportantTasks, getLogsBetween, getSettings, getWeekTheme, getWeeklyTasks, habitIdsOf, habitsForPeriod, planWeek } from '@/lib/queries'
+import { renderStamp } from '@/lib/notes'
 import type { Session } from '@/lib/session'
 import { currentMonday, getCurrentTheme } from '@/lib/weekThemes'
 import { WeekReview } from '@/components/week/WeekReview'
 import type { DailyLog } from '@/payload-types'
 import { Collapsible } from './Collapsible'
 import { DayLogProvider, EMPTY_LOG, type DayLog } from './DayLogProvider'
+import { DaySaveStatus } from './DaySaveStatus'
 import { LiveWeekStrip } from './LiveWeekStrip'
 import { PlanFields } from './PlanFields'
 import { TrackerPanel } from './TrackerPanel'
@@ -64,6 +66,7 @@ export async function DayView({ session, day, today }: { session: Session; day: 
   const planSkill = TOEFL_SKILLS.some((s) => s.value === slot) ? (slot as ToeflSkill) : null
   const toeflWeek = planWeek(settings.planStart, day)
   const daysToExam = settings.examDate ? daysBetween(day, settings.examDate) : null
+  const renderedAt = renderStamp()
   const todayImportant = important.filter((t) => t.day === day)
   const nextImportant = important.filter((t) => t.day === nextDay)
   const doneImportant = todayImportant.filter((t) => t.status === 'done').length
@@ -73,18 +76,19 @@ export async function DayView({ session, day, today }: { session: Session; day: 
   const isSunday = weekdayOf(day) === 'sun'
 
   return (
-    <DayLogProvider key={day} day={day} initial={toDayLog(log)}>
+    <DayLogProvider key={day} day={day} initial={toDayLog(log)} renderedAt={renderedAt}>
+      <DaySaveStatus />
       <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 md:mb-8">
         <div>
           <p className="font-mono text-xs text-muted">
             <Link href={`/journal/week/${monday}`} className="hover:text-ink-strong hover:underline">
-              {day.slice(0, 4)} 第 {isoWeek(day)} 週
+              {isoWeekYear(day)} 第 {isoWeek(day)} 週
             </Link>
             {toeflWeek >= 1 && ` · 托福第 ${toeflWeek} 週`}
           </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink-strong md:text-4xl">{formatDayLong(day)}</h1>
           <nav aria-label="切換日期" className="mt-2 flex items-center gap-1 text-sm">
-            <Link href={dayHref(addDays(day, -1), today)} className="rounded-md p-1 text-muted hover:bg-sunken hover:text-ink-strong" aria-label="前一天">
+            <Link href={dayHref(addDays(day, -1), today)} className="rounded-md p-2 text-muted hover:bg-sunken hover:text-ink-strong md:p-1" aria-label="前一天">
               <CaretLeft size={16} />
             </Link>
             {!isToday && (
@@ -92,7 +96,7 @@ export async function DayView({ session, day, today }: { session: Session; day: 
                 回到今天
               </Link>
             )}
-            <Link href={dayHref(nextDay, today)} className="rounded-md p-1 text-muted hover:bg-sunken hover:text-ink-strong" aria-label="後一天">
+            <Link href={dayHref(nextDay, today)} className="rounded-md p-2 text-muted hover:bg-sunken hover:text-ink-strong md:p-1" aria-label="後一天">
               <CaretRight size={16} />
             </Link>
           </nav>
@@ -150,6 +154,7 @@ export async function DayView({ session, day, today }: { session: Session; day: 
             key={`note-${day}`}
             target={{ kind: 'day', day }}
             initial={Array.isArray(log?.note) ? log.note : null}
+            renderedAt={renderedAt}
             placeholder="今天過得怎麼樣？學到什麼、卡在哪裡、明天想怎麼調整…"
           />
         </section>
@@ -181,7 +186,8 @@ export async function DayView({ session, day, today }: { session: Session; day: 
                 <p className="mb-2 text-xs font-semibold tracking-wide text-muted">IMPORTANT</p>
                 <TaskList kind="important" scope={nextDay} items={nextImportant} today={today} addLabel="明天最重要的事" />
               </div>
-              <DayLogProvider day={nextDay} initial={toDayLog(nextLogs[0])}>
+              <DayLogProvider day={nextDay} initial={toDayLog(nextLogs[0])} renderedAt={renderedAt}>
+                <DaySaveStatus />
                 <PlanFields />
               </DayLogProvider>
             </div>

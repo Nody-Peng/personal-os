@@ -1,11 +1,11 @@
 import type { CollectionConfig } from 'payload'
 import { authenticated } from '@/access/authenticated'
 import { blocksToText } from '@/lib/blocks'
-import { DAY_PATTERN } from '@/lib/day'
+import { isDay } from '@/lib/day'
 import { MAX_ICON_LENGTH, MAX_PAGE_TITLE } from '@/lib/notes'
-import { ITEM_STATUSES, PAGE_KINDS, selectOptions } from '@/lib/options'
+import { ITEM_STATUSES, PAGE_FONTS, PAGE_KINDS, selectOptions } from '@/lib/options'
 
-const optionalDay = (value: string | null | undefined) => !value || DAY_PATTERN.test(value) || '請用 YYYY-MM-DD 格式'
+const optionalDay = (value: string | null | undefined) => !value || isDay(value) || '請用 YYYY-MM-DD 格式'
 
 const idOf = (value: unknown): number | null =>
   value == null ? null : typeof value === 'object' ? ((value as { id?: number }).id ?? null) : Number(value)
@@ -49,6 +49,17 @@ export const NotePages: CollectionConfig = {
         { name: 'kind', label: '類型', type: 'select', defaultValue: 'page', index: true, options: selectOptions(PAGE_KINDS) },
         { name: 'status', label: '狀態（看板項目）', type: 'select', options: selectOptions(ITEM_STATUSES) },
         { name: 'parentItem', label: '上級項目', type: 'relationship', relationTo: 'note-pages', index: true },
+      ],
+    },
+    {
+      // The page's ••• menu (Notion's page customization) and the sidebar star.
+      type: 'row',
+      fields: [
+        { name: 'font', label: '字型', type: 'select', defaultValue: 'default', options: selectOptions(PAGE_FONTS) },
+        { name: 'smallText', label: '小字', type: 'checkbox', defaultValue: false },
+        { name: 'fullWidth', label: '全寬', type: 'checkbox', defaultValue: false },
+        { name: 'locked', label: '鎖定頁面', type: 'checkbox', defaultValue: false },
+        { name: 'favorite', label: '我的最愛', type: 'checkbox', defaultValue: false, index: true },
       ],
     },
     {

@@ -3,12 +3,13 @@
 import { revalidatePath } from 'next/cache'
 import type { Where } from 'payload'
 import { clampInt, cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
-import { DAY_PATTERN } from '@/lib/day'
+import { isDay } from '@/lib/day'
 import {
   MAX_ICON_LENGTH,
   MAX_NOTEBOOK_TITLE,
   MAX_PAGE_TITLE,
   TRASH_DAYS,
+  UNTITLED,
   applyItemMove,
   applyMove,
   childrenOf,
@@ -23,7 +24,8 @@ import {
   type PageNode,
 } from '@/lib/notes'
 import { toNotebookItem } from '@/lib/notebookQueries'
-import { COVER_COLORS, COVER_PATTERNS, ITEM_STATUSES, type CoverColor, type CoverPattern, type ItemStatus } from '@/lib/options'
+import { cleanNoteIcon } from '@/lib/noteIcons'
+import { COVER_COLORS, COVER_PATTERNS, ITEM_STATUSES, PAGE_FONTS, type CoverColor, type CoverPattern, type ItemStatus, type PageFont } from '@/lib/options'
 import { requireActionSession, type Session } from '@/lib/session'
 
 // The shelf shows page counts; the notebook view keeps its own tree state.
@@ -61,15 +63,15 @@ function cleanNotebookTitle(value: unknown): string {
 /** Single-line titles; emptiness is fine (shown as 未命名). */
 const cleanPageTitle = (value: unknown) => cleanText(value, MAX_PAGE_TITLE).replace(/\s+/g, ' ').trim()
 
-/** One emoji or a couple of characters. */
-const cleanIcon = (value: unknown) => Array.from(String(value ?? '').trim()).slice(0, 8).join('').slice(0, MAX_ICON_LENGTH)
+/** One emoji (or a couple of characters), or a coloured `ph:` icon. */
+const cleanIcon = (value: unknown) => cleanNoteIcon(value).slice(0, MAX_ICON_LENGTH)
 
 /** Every page of a notebook as tree nodes, optionally including the trash. */
 async function treeOf({ payload, user }: Session, notebookId: number, withTrash = false) {
   const { docs } = await payload.find({
     collection: 'note-pages',
     where: { notebook: { equals: notebookId } },
-    select: { title: true, icon: true, parent: true, position: true, kind: true, deletedAt: true },
+    select: { title: true, icon: true, parent: true, position: true, kind: true, favorite: true, deletedAt: true },
     depth: 0,
     pagination: false,
     trash: withTrash,
@@ -164,7 +166,124 @@ export async function createPage(notebookId: number, parentId: number | null): P
   }
 }
 
-export type PagePatch = Partial<{ title: string; icon: string; content: unknown[] | null; cover: string; coverPosition: number }>
+/** Sub-page and board blocks inside copied content point at the copies. */
+function remapContent(value: unknown, copies: Map<number, number>): unknown {
+  if (Array.isArray(value)) return value.map((v) => remapContent(v, copies))
+  if (!value || typeof value !== 'object') return value
+  const block = value as { type?: unknown; props?: Record<string, unknown>; children?: unknown }
+  let props = block.props
+  if (props && block.type === 'pageLink' && props.mode === 'child' && copies.has(Number(props.pageId))) {
+    props = { ...props, pageId: copies.get(Number(props.pageId)) }
+  }
+  if (props && block.type === 'board' && copies.has(Number(props.boardId))) {
+    props = { ...props, boardId: copies.get(Number(props.boardId)) }
+  }
+  return { ...block, props, children: remapContent(block.children, copies) }
+}
+
+/**
+ * Notion's Duplicate: a page and everything under it (sub-pages, boards and
+ * their cards), placed right after the original. Returns the copy first,
+ * then the new tree nodes (cards excluded, as in the sidebar).
+ */
+export async function duplicatePage(id: number): Promise<ActionResult<{ id: number; nodes: PageNode[] }>> {
+  try {
+    const session = await requireActionSession()
+    const { payload, user } = session
+    const pageId = asId(id)
+    const original = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, user, overrideAccess: false })
+    const notebook = idOf(original.notebook)!
+    const tree = (await treeOf(session, notebook)).map(toPageNode)
+    const ids = subtreeIds(tree, pageId)
+    const { docs } = await payload.find({
+      collection: 'note-pages',
+      where: { id: { in: ids } },
+      depth: 0,
+      pagination: false,
+      user,
+      overrideAccess: false,
+    })
+    // Parents before children.
+    const depthOf = (pid: number): number => (pid === pageId ? 0 : 1 + depthOf(idOf(docs.find((d) => d.id === pid)?.parent) ?? pageId))
+    docs.sort((a, b) => depthOf(a.id) - depthOf(b.id))
+
+    const transactionID = await payload.db.beginTransaction()
+    const req = transactionID ? { transactionID } : undefined
+    const copies = new Map<number, number>()
+    try {
+      // Make room right after the original.
+      const parent = idOf(original.parent)
+      for (const sibling of tree.filter((p) => p.parent === parent && p.position > (original.position ?? 0))) {
+        await payload.update({ collection: 'note-pages', id: sibling.id, data: { position: sibling.position + 1 }, user, overrideAccess: false, req })
+      }
+      for (const doc of docs) {
+        const isRoot = doc.id === pageId
+        const created = await payload.create({
+          collection: 'note-pages',
+          data: {
+            notebook,
+            parent: isRoot ? parent : copies.get(idOf(doc.parent)!),
+            title: isRoot ? `${doc.title || UNTITLED}（副本）`.slice(0, MAX_PAGE_TITLE) : doc.title,
+            icon: doc.icon,
+            kind: doc.kind,
+            status: doc.status,
+            startDate: doc.startDate,
+            endDate: doc.endDate,
+            parentItem: copies.get(idOf(doc.parentItem) ?? -1) ?? idOf(doc.parentItem),
+            cover: doc.cover,
+            coverPosition: doc.coverPosition,
+            font: doc.font,
+            smallText: doc.smallText,
+            fullWidth: doc.fullWidth,
+            position: isRoot ? (original.position ?? 0) + 1 : doc.position,
+            editedAt: new Date().toISOString(),
+          },
+          user,
+          overrideAccess: false,
+          req,
+        })
+        copies.set(doc.id, created.id)
+      }
+      for (const doc of docs) {
+        if (!Array.isArray(doc.content)) continue
+        await payload.update({
+          collection: 'note-pages',
+          id: copies.get(doc.id)!,
+          data: { content: remapContent(doc.content, copies) as unknown[] },
+          user,
+          overrideAccess: false,
+          req,
+        })
+      }
+      if (transactionID) await payload.db.commitTransaction(transactionID)
+    } catch (error) {
+      if (transactionID) await payload.db.rollbackTransaction(transactionID)
+      throw error
+    }
+
+    const fresh = (await treeOf(session, notebook)).map(toPageNode)
+    const created = new Set(copies.values())
+    refreshShelf()
+    return { ok: true, data: { id: copies.get(pageId)!, nodes: fresh.filter((p) => created.has(p.id) && p.kind !== 'item') } }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export type PagePatch = Partial<{
+  title: string
+  icon: string
+  content: unknown[] | null
+  cover: string
+  coverPosition: number
+  font: PageFont
+  smallText: boolean
+  fullWidth: boolean
+  locked: boolean
+  favorite: boolean
+}>
+
+const PAGE_FONT_VALUES = new Set<string>(PAGE_FONTS.map((f) => f.value))
 
 /** Covers are our own uploads only (served, with the login check, by Payload). */
 function cleanCover(value: unknown): string {
@@ -177,19 +296,19 @@ function cleanCover(value: unknown): string {
 export async function updatePage(id: number, patch: PagePatch): Promise<ActionResult> {
   try {
     const { payload, user } = await requireActionSession()
-    const data: {
-      title?: string
-      icon?: string
-      content?: unknown[] | null
-      cover?: string
-      coverPosition?: number
-      editedAt?: string
-    } = {}
+    const data: Omit<PagePatch, 'font'> & { font?: PageFont; editedAt?: string } = {}
     if ('title' in patch) data.title = cleanPageTitle(patch.title)
     if ('icon' in patch) data.icon = cleanIcon(patch.icon)
     if ('content' in patch) data.content = cleanBlocks(patch.content)
     if ('cover' in patch) data.cover = cleanCover(patch.cover)
     if ('coverPosition' in patch) data.coverPosition = clampInt(patch.coverPosition, 0, 100)
+    if ('font' in patch) {
+      if (!PAGE_FONT_VALUES.has(String(patch.font))) throw new Error('字型錯誤')
+      data.font = patch.font
+    }
+    for (const key of ['smallText', 'fullWidth', 'locked', 'favorite'] as const) {
+      if (key in patch) data[key] = patch[key] === true
+    }
     if (!Object.keys(data).length) return { ok: true }
     if ('title' in data || 'content' in data) data.editedAt = new Date().toISOString()
     await payload.update({ collection: 'note-pages', id: asId(id), data, user, overrideAccess: false })
@@ -206,8 +325,13 @@ export async function movePage(id: number, parentId: number | null, index: numbe
     const { payload, user } = session
     const pageId = asId(id)
     const page = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, user, overrideAccess: false })
+    // Cards move between board columns (moveItem); a page can't live inside a
+    // card, where the sidebar would never show it.
+    if (page.kind === 'item') throw new Error('看板卡片請在看板裡移動')
     const before = (await treeOf(session, idOf(page.notebook)!)).map(toPageNode)
-    const after = applyMove(before, pageId, optionalId(parentId), Number(index))
+    const target = optionalId(parentId)
+    if (target != null && before.find((p) => p.id === target)?.kind === 'item') throw new Error('不能把頁面放進看板卡片裡')
+    const after = applyMove(before, pageId, target, Number(index))
     const changed = after.filter((p, i) => p.parent !== before[i].parent || p.position !== before[i].position)
     // The moved page first, so its new parent is checked before siblings shift.
     changed.sort((a, b) => Number(b.id === pageId) - Number(a.id === pageId))
@@ -304,12 +428,15 @@ export async function restorePage(id: number): Promise<ActionResult<PageNode[]>>
     )
     const ids = [...batch]
 
-    // If its parent is still in the trash, bring it back at the top level.
+    // If its parent is still in the trash, bring it back at the top level. A
+    // card whose board is gone comes back as an ordinary page, or nothing
+    // would ever show it.
     const parent = all.find((p) => p.id === idOf(page.parent))
     const parentGone = !parent || Boolean(parent.deletedAt)
     const live = all.filter((p) => !p.deletedAt).map(toPageNode)
     const newParent = parentGone ? null : parent.id
-    const siblings = childrenOf(live, newParent)
+    const siblings = childrenOf(live, newParent).filter((p) => p.kind !== 'item')
+    const orphanCard = page.kind === 'item' && parentGone
 
     await payload.update({
       collection: 'note-pages',
@@ -319,17 +446,21 @@ export async function restorePage(id: number): Promise<ActionResult<PageNode[]>>
       user,
       overrideAccess: false,
     })
-    await payload.update({
-      collection: 'note-pages',
-      id: pageId,
-      data: { parent: newParent, position: siblings.length ? siblings[siblings.length - 1].position + 1 : 0 },
-      user,
-      overrideAccess: false,
-    })
+    const position = siblings.length ? siblings[siblings.length - 1].position + 1 : 0
+    if (page.kind !== 'item' || orphanCard) {
+      await payload.update({
+        collection: 'note-pages',
+        id: pageId,
+        data: { parent: newParent, position, ...(orphanCard ? { kind: 'page' as const, parentItem: null } : {}) },
+        user,
+        overrideAccess: false,
+      })
+    }
 
+    // Cards are reached through their board, never the sidebar tree.
     const restored = await treeOf(session, idOf(page.notebook)!)
     refreshShelf()
-    return { ok: true, data: restored.filter((p) => batch.has(p.id)).map(toPageNode) }
+    return { ok: true, data: restored.filter((p) => batch.has(p.id) && p.kind !== 'item').map(toPageNode) }
   } catch (error) {
     return fail(error)
   }
@@ -505,7 +636,7 @@ function cleanStatus(value: unknown): ItemStatus {
 
 const optionalDay = (value: unknown): string | null => {
   if (value == null || value === '') return null
-  if (typeof value !== 'string' || !DAY_PATTERN.test(value)) throw new Error('日期格式錯誤')
+  if (!isDay(value)) throw new Error('日期格式錯誤')
   return value
 }
 

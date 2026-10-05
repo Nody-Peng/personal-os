@@ -150,7 +150,7 @@ export function TrackerPanel({ planLabel, planSkill, themeTitle, weekHref, habit
                   aria-checked={on}
                   onClick={() => commit({ energy: on ? null : n })}
                   className={`h-9 rounded-md border text-sm font-medium transition-colors ${
-                    on ? 'border-ink-strong bg-ink-strong text-white' : 'border-line-strong text-ink hover:bg-sunken'
+                    on ? 'border-ink-strong bg-ink-strong text-on-ink' : 'border-line-strong text-ink hover:bg-sunken'
                   }`}
                 >
                   {n}
@@ -177,8 +177,8 @@ function Habit({ habit, done, onToggle }: { habit: HabitItem; done: boolean; onT
     >
       <HabitIcon icon={habit.icon} size={20} className={done ? 'text-green-ink' : 'text-ink'} />
       <span className={`min-w-0 flex-1 truncate text-sm font-medium ${done ? 'text-green-ink' : 'text-ink-strong'}`}>{habit.name}</span>
-      <span className={`flex size-5 items-center justify-center rounded-full border ${done ? 'border-green-ink bg-green-ink text-white' : 'border-line-strong'}`}>
-        {done && <Check size={12} weight="bold" />}
+      <span className={`flex size-5 items-center justify-center rounded-full border ${done ? 'border-green-ink bg-green-ink text-on-ink' : 'border-line-strong'}`}>
+        {done && <Check size={12} weight="bold" className="check-in" />}
       </span>
     </button>
   )

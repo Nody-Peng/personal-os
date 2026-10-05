@@ -15,6 +15,10 @@ const LOADING: BoardState = { status: 'loading', data: null, error: null }
 const boards = new Map<number, BoardState>()
 const listeners = new Map<number, Set<() => void>>()
 const inFlight = new Map<number, Promise<void>>()
+/** Bumped by every local change, so a load that started earlier can tell it is stale. */
+const versions = new Map<number, number>()
+const versionOf = (id: number) => versions.get(id) ?? 0
+const bump = (id: number) => versions.set(id, versionOf(id) + 1)
 
 function set(id: number, state: BoardState) {
   boards.set(id, state)
@@ -23,17 +27,28 @@ function set(id: number, state: BoardState) {
 
 function setItems(id: number, update: (items: BoardItem[]) => BoardItem[]) {
   const current = boards.get(id)
-  if (current?.data) set(id, { ...current, data: { ...current.data, items: update(current.data.items) } })
+  if (!current?.data) return
+  bump(id)
+  set(id, { ...current, data: { ...current.data, items: update(current.data.items) } })
 }
 
-/** (Re)loads a board; the cards already shown stay until the new ones arrive. */
+/**
+ * (Re)loads a board; the cards already shown stay until the new ones arrive.
+ * A card moved while the load was on its way makes the answer stale (server
+ * actions run one at a time, so it predates the move): load again instead.
+ */
 export function loadBoard(id: number): Promise<void> {
   const running = inFlight.get(id)
   if (running) return running
+  const started = versionOf(id)
   const run = getBoard(id).then((result) => {
     inFlight.delete(id)
+    if (versionOf(id) !== started) return loadBoard(id)
     if (result.ok && result.data) set(id, { status: 'ready', data: result.data, error: null })
     else set(id, { status: 'error', data: boards.get(id)?.data ?? null, error: result.ok ? '找不到看板' : result.error })
+  }).catch(() => {
+    inFlight.delete(id)
+    set(id, { status: 'error', data: boards.get(id)?.data ?? null, error: '連線失敗' })
   })
   inFlight.set(id, run)
   return run
@@ -104,5 +119,7 @@ export function dropItems(boardId: number, ids: number[]) {
 
 export function renameBoard(boardId: number, title: string) {
   const current = boards.get(boardId)
-  if (current?.data) set(boardId, { ...current, data: { ...current.data, title } })
+  if (!current?.data) return
+  bump(boardId)
+  set(boardId, { ...current, data: { ...current.data, title } })
 }

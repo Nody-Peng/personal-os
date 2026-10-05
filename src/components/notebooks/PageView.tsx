@@ -1,21 +1,25 @@
 'use client'
 
-import { ArrowsDownUp, CaretRight, DotsThree, FileText, ImageSquare, Kanban, List, Plus, Smiley, Trash } from '@phosphor-icons/react'
+import { CaretRight, FileText, ImageSquare, Kanban, List, LockSimple, Plus, Smiley, Star } from '@phosphor-icons/react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { updatePage, type PagePatch } from '@/app/(frontend)/notebook-actions'
+import { duplicatePage, updatePage, type PagePatch } from '@/app/(frontend)/notebook-actions'
 import { BlockEditor, SaveStatusText } from '@/components/editor/BlockEditor'
 import { NoteContext } from '@/components/editor/NoteContext'
-import { renameItem } from '@/lib/boardStore'
-import { pageWithEdits, rememberPageEdit } from '@/lib/noteCache'
+import { blocksToText, countWords } from '@/lib/blocks'
+import { loadBoard, renameItem } from '@/lib/boardStore'
+import { pageWithEdits, peekLocal, rememberPageEdit, usePageStamp } from '@/lib/noteCache'
 import { MAX_PAGE_TITLE, UNTITLED, ancestorsOf, childrenOf, embeddedPageIds, type PageNode } from '@/lib/notes'
+import type { PageFont } from '@/lib/options'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 import { BoardView } from './board/BoardView'
 import { ItemProperties } from './board/ItemProperties'
 import { IconPicker } from './IconPicker'
-import { Menu } from './Menu'
 import { useNoteEditorContext, useNotebook } from './NotebookShell'
+import { NoteIcon } from './NoteIcon'
 import { PageCover, useCoverPicker } from './PageCover'
+import { PageMenu, type PageStyle } from './PageMenu'
 
 export type PageData = {
   id: number
@@ -27,19 +31,43 @@ export type PageData = {
   content: unknown[] | null
   cover: string
   coverPosition: number
+  font: PageFont
+  smallText: boolean
+  fullWidth: boolean
+  locked: boolean
+  favorite: boolean
 }
 
 const TITLE_DELAY = 500
+// Loaded only for pages set to 襯線 (216 unicode-range slices; the browser
+// fetches just the ones a page uses).
+const SERIF_CSS = 'https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&display=swap'
 
 const sameIds = (a: Set<number>, b: Set<number>) => a.size === b.size && [...a].every((id) => b.has(id))
 
+/** 全部展開／收合: press every toggle that isn't already that way. */
+function setToggles(open: boolean) {
+  document
+    .querySelectorAll<HTMLButtonElement>(`.note-editor .bn-toggle-wrapper[data-show-children="${open ? 'false' : 'true'}"] > .bn-toggle-button`)
+    .forEach((button) => button.click())
+}
+
 /** One page: cover, icon, title, then the editor (or a board) and the sub-pages not shown in the text. */
 export function PageView({ page: serverPage, renderedAt }: { page: PageData; renderedAt: number }) {
-  const { notebook, pages, patchPage, addPage, trash, openMove, openDrawer } = useNotebook()
+  const router = useRouter()
+  const { notebook, pages, patchPage, addPage, trash, openMove, openDrawer, restored, notify, say } = useNotebook()
   const [page] = useState(() => pageWithEdits(serverPage.id, serverPage, renderedAt))
+  usePageStamp(serverPage.id, renderedAt)
   const [title, setTitle] = useState(page.title)
   const [icon, setIcon] = useState(page.icon)
   const [cover, setCover] = useState({ url: page.cover, position: page.coverPosition })
+  const [look, setLook] = useState<PageStyle>({
+    font: page.font,
+    smallText: page.smallText,
+    fullWidth: page.fullWidth,
+    locked: page.locked,
+    favorite: page.favorite,
+  })
   const [picking, setPicking] = useState(false)
   const [embedded, setEmbedded] = useState(() => embeddedPageIds(page.content))
   const [body, setBody] = useState<{ status: SaveStatus; error: string | null }>({ status: 'idle', error: null })
@@ -48,6 +76,10 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
   const pendingTitle = useRef<string | null>(null)
   const id = page.id
   const note = useNoteEditorContext(id)
+  const locked = look.locked
+  // The sidebar star and this one share the tree's copy; board cards have none.
+  const canFavorite = page.kind !== 'item'
+  const favorite = canFavorite && (pages.find((p) => p.id === id)?.favorite ?? look.favorite)
 
   const save = useCallback((patch: PagePatch) => enqueue(() => updatePage(id, patch)), [enqueue, id])
 
@@ -85,6 +117,50 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
   }
   const coverPicker = useCoverPicker((url) => changeCover({ cover: url, coverPosition: 50 }))
 
+  const changeLook = (patch: Partial<PageStyle>) => {
+    setLook((current) => ({ ...current, ...patch }))
+    rememberPageEdit(id, patch)
+    if ('favorite' in patch) patchPage(id, { favorite: patch.favorite })
+    save(patch)
+  }
+
+  /** What the editor shows right now (it may not be saved yet). */
+  const latestContent = () => peekLocal<unknown[]>(`doc:note:${id}`) ?? page.content
+
+  const duplicate = async () => {
+    flushTitle()
+    const result = await duplicatePage(id)
+    if (!result.ok || !result.data) return notify(result.ok ? '建立副本失敗' : result.error)
+    restored(result.data.nodes)
+    if (page.boardId) void loadBoard(page.boardId)
+    router.push(`/notebooks/${notebook.id}/${result.data.id}`)
+  }
+
+  const copyLink = () => {
+    void navigator.clipboard.writeText(`${window.location.origin}/notebooks/${notebook.id}/${id}`).then(() => say('已複製頁面連結'))
+  }
+
+  const exportAs = async (format: 'markdown' | 'html') => {
+    try {
+      const { exportPage } = await import('@/lib/exportNote')
+      await exportPage(format, title, latestContent())
+    } catch (e) {
+      notify(e instanceof Error ? e.message : '匯出失敗')
+    }
+  }
+
+  // Notion's Ctrl/⌘+Alt+T: open every toggle, or close them all if none is shut.
+  useEffect(() => {
+    if (page.kind === 'board') return
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.altKey || e.key.toLowerCase() !== 't') return
+      e.preventDefault()
+      setToggles(document.querySelector('.note-editor .bn-toggle-wrapper[data-show-children="false"]') != null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [page.kind])
+
   useEffect(() => {
     document.title = `${title.trim() || UNTITLED} · ${notebook.title} · Personal OS`
   }, [title, notebook.title])
@@ -102,9 +178,12 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
           ? { status: 'saved', error: null }
           : { status: 'idle', error: null }
 
+  const width = look.fullWidth ? 'max-w-none' : page.kind === 'board' ? 'max-w-6xl' : 'max-w-3xl'
+
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-12 items-center gap-2 bg-surface/90 px-3 backdrop-blur md:px-5">
+      {look.font === 'serif' && <link rel="stylesheet" href={SERIF_CSS} precedence="default" />}
+      <header className="sticky top-0 z-20 flex h-12 items-center gap-1 bg-surface/90 px-3 backdrop-blur print:hidden md:px-5">
         <button type="button" onClick={openDrawer} aria-label="打開頁面目錄" className="rounded-md p-1.5 text-muted hover:bg-sunken hover:text-ink-strong md:hidden">
           <List size={20} />
         </button>
@@ -114,7 +193,7 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
             <span key={c.id} className={`min-w-0 items-center gap-1 ${i < crumbs.length - 1 ? 'hidden md:flex' : 'flex'}`}>
               <CaretRight size={10} className={`shrink-0 text-faint ${i === 0 ? 'hidden md:block' : ''}`} />
               <Link href={`/notebooks/${notebook.id}/${c.id}`} className="truncate rounded px-1 hover:bg-sunken hover:text-ink-strong">
-                {c.icon && <span className="mr-1">{c.icon}</span>}
+                {c.icon && <NoteIcon icon={c.icon} className="mr-1 inline align-[-0.125em]" />}
                 {c.title || UNTITLED}
               </Link>
             </span>
@@ -122,65 +201,95 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
           <span className="flex min-w-0 items-center gap-1">
             <CaretRight size={10} className={`shrink-0 text-faint ${crumbs.length ? '' : 'hidden md:block'}`} />
             <span className="truncate px-1 text-ink-strong">
-              {icon && <span className="mr-1">{icon}</span>}
+              {icon && <NoteIcon icon={icon} className="mr-1 inline align-[-0.125em]" />}
               {title.trim() || UNTITLED}
             </span>
           </span>
         </nav>
-        <span className="hidden shrink-0 sm:inline">
+        <span className="hidden shrink-0 px-1 sm:inline">
           <SaveStatusText status={merged.status} error={merged.error} />
         </span>
-        <Menu
-          label="頁面選項"
-          className="rounded-md p-1.5 text-muted hover:bg-sunken hover:text-ink-strong"
-          items={[
-            { label: '新增子頁面', icon: <Plus size={14} />, onSelect: () => addPage(id) },
-            ...(page.kind === 'item' ? [] : [{ label: '移動到…', icon: <ArrowsDownUp size={14} />, onSelect: () => openMove(id) }]),
-            { label: '移到垃圾桶', icon: <Trash size={14} />, onSelect: () => trash(id, page.boardId), danger: true },
-          ]}
-        >
-          <DotsThree size={20} weight="bold" />
-        </Menu>
+        {locked && (
+          <button
+            type="button"
+            onClick={() => changeLook({ locked: false })}
+            title="已鎖定，點一下解除"
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-sunken hover:text-ink-strong"
+          >
+            <LockSimple size={14} />
+            <span className="hidden sm:inline">已鎖定</span>
+          </button>
+        )}
+        {canFavorite && (
+          <button
+            type="button"
+            onClick={() => changeLook({ favorite: !favorite })}
+            aria-pressed={favorite}
+            aria-label={favorite ? '從我的最愛移除' : '加入我的最愛'}
+            title={favorite ? '從我的最愛移除' : '加入我的最愛'}
+            className={`rounded-md p-1.5 transition-colors hover:bg-sunken ${favorite ? 'text-yellow-ink' : 'text-muted hover:text-ink-strong'}`}
+          >
+            <Star size={18} weight={favorite ? 'fill' : 'regular'} className={favorite ? 'star-pop' : ''} />
+          </button>
+        )}
+        <PageMenu
+          style={{ ...look, favorite }}
+          canFavorite={canFavorite}
+          onStyle={changeLook}
+          stats={() => countWords(`${title}\n${blocksToText(latestContent())}`)}
+          onDuplicate={duplicate}
+          onCopyLink={copyLink}
+          onMove={page.kind === 'item' ? undefined : () => openMove(id)}
+          onExport={exportAs}
+          onPrint={() => window.print()}
+          onToggles={page.kind === 'board' ? undefined : setToggles}
+          onTrash={() => trash(id, page.boardId)}
+        />
       </header>
 
-      <PageCover cover={cover.url} position={cover.position} onChange={changeCover} />
+      <PageCover cover={cover.url} position={cover.position} onChange={changeCover} readOnly={locked} />
       {coverPicker.input}
 
-      <article className={`mx-auto px-5 pb-40 md:px-14 ${page.kind === 'board' ? 'max-w-6xl' : 'max-w-3xl'} ${cover.url ? 'pt-6' : 'pt-8 md:pt-16'}`}>
+      <article
+        className={`note-page page-in note-font-${look.font} ${look.smallText ? 'note-small' : ''} mx-auto px-5 pb-40 md:px-14 ${width} ${cover.url ? 'pt-6' : 'pt-8 md:pt-16'}`}
+      >
         <div className="relative flex flex-wrap items-end gap-1">
           {icon ? (
             <button
               type="button"
               onClick={() => setPicking(true)}
+              disabled={locked}
               aria-label="更換圖示"
-              className={`-ml-1 grid size-16 place-items-center rounded-lg text-5xl leading-none hover:bg-sunken ${cover.url ? '-mt-14 bg-surface/0' : 'mb-2'}`}
+              className={`-ml-1 grid size-16 place-items-center rounded-lg text-5xl leading-none transition-colors enabled:hover:bg-sunken ${cover.url ? '-mt-14 bg-surface/0' : 'mb-2'}`}
             >
-              {icon}
+              <NoteIcon icon={icon} />
             </button>
           ) : null}
-          <div className={`flex gap-1 ${icon ? 'mb-2 ml-2' : 'mb-2'}`}>
-            {!icon && (
-              <button
-                type="button"
-                onClick={() => setPicking(true)}
-                className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-faint transition-colors hover:bg-sunken hover:text-muted"
-              >
-                {page.kind === 'board' ? <Kanban size={16} /> : <Smiley size={16} />}
-                新增圖示
-              </button>
-            )}
-            {!cover.url && (
-              <button
-                type="button"
-                onClick={coverPicker.open}
-                disabled={coverPicker.busy}
-                className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-faint transition-colors hover:bg-sunken hover:text-muted"
-              >
-                <ImageSquare size={16} />
-                {coverPicker.busy ? '上傳中…' : '新增封面'}
-              </button>
-            )}
-          </div>
+          {!locked && (
+            <div className={`page-affordances flex gap-1 print:hidden ${icon ? 'mb-2 ml-2' : 'mb-2'}`}>
+              {!icon && (
+                <button
+                  type="button"
+                  onClick={() => setPicking(true)}
+                  className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-faint transition-colors hover:bg-sunken hover:text-muted"
+                >
+                  {page.kind === 'board' ? <Kanban size={16} /> : <Smiley size={16} />}
+                  新增圖示
+                </button>
+              )}
+              {!cover.url && (
+                <button
+                  type="button"
+                  onClick={coverPicker.open}
+                  disabled={coverPicker.busy}
+                  className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-faint transition-colors hover:bg-sunken hover:text-muted"
+                >
+                  <ImageSquare size={16} />
+                  {coverPicker.busy ? '上傳中…' : '新增封面'}
+                </button>
+              )}
+            </div>
+          )}
           {picking && <IconPicker value={icon} onChange={changeIcon} onClose={() => setPicking(false)} />}
         </div>
 
@@ -195,11 +304,12 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
               document.querySelector<HTMLElement>('.note-editor [contenteditable="true"]')?.focus()
             }
           }}
+          readOnly={locked}
           rows={1}
           placeholder={UNTITLED}
           aria-label="標題"
-          autoFocus={!page.title && !page.content?.length && page.kind !== 'board'}
-          className="field-sizing-content w-full resize-none overflow-hidden bg-transparent text-3xl leading-tight font-semibold tracking-tight text-ink-strong outline-none placeholder:text-line-strong md:text-[2.5rem]"
+          autoFocus={!locked && !page.title && !page.content?.length && page.kind !== 'board'}
+          className="note-title field-sizing-content w-full resize-none overflow-hidden bg-transparent text-3xl leading-tight font-semibold tracking-tight text-ink-strong outline-none placeholder:text-line-strong md:text-[2.5rem]"
         />
 
         {page.kind === 'item' && page.boardId != null && (
@@ -220,6 +330,8 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
                 key={id}
                 target={{ kind: 'note', id }}
                 initial={page.content}
+                renderedAt={renderedAt}
+                editable={!locked}
                 className="note-editor"
                 placeholder="輸入文字，或按 / 插入標題、清單、頁面、看板…"
                 allowUploads
@@ -234,15 +346,15 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
           </div>
         )}
 
-        {page.kind !== 'board' && (
-          <section aria-label="子頁面" className="mt-10 border-t border-line pt-4">
+        {page.kind !== 'board' && (kids.length > 0 || !locked) && (
+          <section aria-label="子頁面" className="mt-10 border-t border-line pt-4 print:hidden">
             {kids.length > 0 && (
               <ul className="mb-1">
                 {kids.map((k) => (
                   <li key={k.id}>
                     <Link href={`/notebooks/${notebook.id}/${k.id}`} className="-mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-ink hover:bg-sunken">
                       <span className="grid size-5 place-items-center text-base leading-none text-muted">
-                        {k.icon || (k.kind === 'board' ? <Kanban size={18} /> : <FileText size={18} />)}
+                        <NoteIcon icon={k.icon} fallback={k.kind === 'board' ? <Kanban size={18} /> : <FileText size={18} />} />
                       </span>
                       <span className={`truncate underline decoration-line-strong underline-offset-4 ${k.title ? '' : 'text-muted'}`}>{k.title || UNTITLED}</span>
                     </Link>
@@ -250,11 +362,15 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
                 ))}
               </ul>
             )}
-            <button type="button" onClick={() => addPage(id)} className="-mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-sunken hover:text-ink-strong">
-              <Plus size={16} />
-              新增子頁面
-            </button>
-            <p className="mt-1 text-xs text-faint">也可以在文章任何地方輸入 /頁面 插入子頁面</p>
+            {!locked && (
+              <>
+                <button type="button" onClick={() => addPage(id)} className="-mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-sunken hover:text-ink-strong">
+                  <Plus size={16} />
+                  新增子頁面
+                </button>
+                <p className="mt-1 text-xs text-faint">也可以在文章任何地方輸入 /頁面 插入子頁面</p>
+              </>
+            )}
           </section>
         )}
       </article>

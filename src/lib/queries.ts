@@ -2,6 +2,7 @@ import 'server-only'
 import type { DailyLog, Idea, Journal, MonthlyNote, Setting, ToeflScore, WeeklyReview } from '@/payload-types'
 import type { HabitIconKey, HabitItem } from './habits'
 import { toTaskItem, type TaskItem } from './taskItems'
+import { isRecordedLog } from './dailyLog'
 import { addDays, daysBetween } from './day'
 import type { Session } from './session'
 
@@ -214,15 +215,10 @@ export async function getJournal(session: Session, year: number): Promise<Journa
   return docs[0] ?? null
 }
 
-/** Number of days with a daily log in `year`. */
-export async function countLoggedDays({ payload, user }: Session, year: number): Promise<number> {
-  const { totalDocs } = await payload.count({
-    collection: 'daily-logs',
-    where: { and: [{ date: { greater_than_equal: `${year}-01-01` } }, { date: { less_than_equal: `${year}-12-31` } }] },
-    user,
-    overrideAccess: false,
-  })
-  return totalDocs
+/** Number of recorded days in `year` (see isRecordedLog). */
+export async function countLoggedDays(session: Session, year: number): Promise<number> {
+  const logs = await getLogsBetween(session, `${year}-01-01`, `${year}-12-31`)
+  return logs.filter(isRecordedLog).length
 }
 
 // ------------------------------------------------------------------- habits

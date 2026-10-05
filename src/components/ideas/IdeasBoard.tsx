@@ -1,6 +1,7 @@
 'use client'
 
 import { ArrowCounterClockwise, Check, Plus, PushPin, Trash, X } from '@phosphor-icons/react'
+import { useRouter } from 'next/navigation'
 import { useRef, useState, useTransition } from 'react'
 import { addIdea, deleteIdea, updateIdea, type IdeaPatch } from '@/app/(frontend)/actions'
 import type { IdeaStatus } from '@/lib/options'
@@ -35,6 +36,7 @@ export function IdeasBoard({ initial }: { initial: IdeaItem[] }) {
   const [tab, setTab] = useState<IdeaStatus>('inbox')
   const [error, setError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
+  const router = useRouter()
 
   // Take fresh server data after a revalidation without an effect.
   const [lastInitial, setLastInitial] = useState(initial)
@@ -55,6 +57,8 @@ export function IdeasBoard({ initial }: { initial: IdeaItem[] }) {
     startTransition(async () => {
       const result = await updateIdea(id, change)
       setError(result.ok ? null : result.error)
+      // The optimistic change (and any theme swap) didn't happen: reload the truth.
+      if (!result.ok) router.refresh()
     })
   }
 
@@ -63,6 +67,7 @@ export function IdeasBoard({ initial }: { initial: IdeaItem[] }) {
     startTransition(async () => {
       const result = await deleteIdea(id)
       setError(result.ok ? null : result.error)
+      if (!result.ok) router.refresh()
     })
   }
 
@@ -117,7 +122,7 @@ export function IdeasBoard({ initial }: { initial: IdeaItem[] }) {
                 aria-selected={tab === status}
                 onClick={() => setTab(status)}
                 className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                  tab === status ? 'bg-ink-strong font-medium text-white' : 'text-muted hover:bg-sunken hover:text-ink-strong'
+                  tab === status ? 'bg-ink-strong font-medium text-on-ink' : 'text-muted hover:bg-sunken hover:text-ink-strong'
                 }`}
               >
                 {label}
@@ -233,7 +238,7 @@ function IdeaRow({
                     aria-checked={idea[key] === n}
                     onClick={() => onPatch(idea.id, { [key]: n })}
                     className={`h-8 w-7 border-l border-line-strong text-xs tabular-nums transition-colors first:border-l-0 ${
-                      idea[key] === n ? 'bg-ink-strong font-semibold text-white' : 'bg-surface text-ink hover:bg-sunken'
+                      idea[key] === n ? 'bg-ink-strong font-semibold text-on-ink' : 'bg-surface text-ink hover:bg-sunken'
                     }`}
                   >
                     {n}

@@ -1,11 +1,13 @@
 'use client'
 
-import { ArrowsDownUp, CaretRight, DotsThree, FileText, Kanban, Plus, Trash } from '@phosphor-icons/react'
+import { ArrowsDownUp, CaretRight, Copy, DotsThree, FileText, Kanban, Plus, Star, Trash } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { useState } from 'react'
+import { duplicatePage, updatePage } from '@/app/(frontend)/notebook-actions'
 import { UNTITLED, childrenOf, subtreeIds, type PageNode } from '@/lib/notes'
 import { Menu } from './Menu'
 import { useNotebook } from './NotebookShell'
+import { NoteIcon } from './NoteIcon'
 
 type Zone = 'before' | 'inside' | 'after'
 type Drop = { id: number; zone: Zone } | null
@@ -70,7 +72,21 @@ type DragState = {
 }
 
 function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: DragState }) {
-  const { pages, notebook, currentId, expanded, toggle, addPage, trash, openMove } = useNotebook()
+  const { pages, notebook, currentId, expanded, toggle, addPage, trash, openMove, patchPage, restored, notify } = useNotebook()
+
+  const setFavorite = async (favorite: boolean) => {
+    patchPage(page.id, { favorite })
+    const result = await updatePage(page.id, { favorite })
+    if (!result.ok) {
+      patchPage(page.id, { favorite: !favorite })
+      notify(result.error)
+    }
+  }
+  const duplicate = async () => {
+    const result = await duplicatePage(page.id)
+    if (!result.ok || !result.data) return notify(result.ok ? '建立副本失敗' : result.error)
+    restored(result.data.nodes)
+  }
   const kids = childrenOf(pages, page.id)
   const open = expanded.has(page.id)
   const active = page.id === currentId
@@ -101,7 +117,7 @@ function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: 
           e.preventDefault()
           drag.finish()
         }}
-        className={`group relative flex h-8 items-center gap-0.5 rounded-md pr-1 text-sm transition-colors ${
+        className={`group relative flex h-10 items-center gap-0.5 rounded-md pr-1 text-sm transition-colors md:h-8 ${
           active ? 'bg-surface font-medium text-ink-strong ring-1 ring-line' : 'text-ink hover:bg-sunken'
         } ${dropHere === 'inside' ? 'bg-accent-soft ring-1 ring-accent/40' : ''} ${drag.dragging === page.id ? 'opacity-40' : ''}`}
         style={{ paddingLeft: 4 + depth * INDENT }}
@@ -126,7 +142,7 @@ function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: 
           className="flex min-w-0 flex-1 items-center gap-2 py-1 outline-none"
         >
           <span className="grid size-5 shrink-0 place-items-center text-[15px] leading-none text-muted">
-            {page.icon || (page.kind === 'board' ? <Kanban size={16} /> : <FileText size={16} />)}
+            <NoteIcon icon={page.icon} fallback={page.kind === 'board' ? <Kanban size={16} /> : <FileText size={16} />} />
           </span>
           <span className={`truncate ${page.title ? '' : 'text-muted'}`}>{page.title || UNTITLED}</span>
         </Link>
@@ -137,6 +153,8 @@ function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: 
             className="grid size-6 place-items-center rounded text-muted hover:bg-line hover:text-ink-strong"
             items={[
               { label: '新增子頁面', icon: <Plus size={14} />, onSelect: () => addPage(page.id) },
+              { label: page.favorite ? '從我的最愛移除' : '加入我的最愛', icon: <Star size={14} />, onSelect: () => void setFavorite(!page.favorite) },
+              { label: '建立副本', icon: <Copy size={14} />, onSelect: () => void duplicate() },
               { label: '移動到…', icon: <ArrowsDownUp size={14} />, onSelect: () => openMove(page.id) },
               { label: '移到垃圾桶', icon: <Trash size={14} />, onSelect: () => trash(page.id), danger: true },
             ]}

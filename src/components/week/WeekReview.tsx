@@ -1,5 +1,6 @@
 import { BlockEditor } from '@/components/editor/BlockEditor'
 import { addDays } from '@/lib/day'
+import { renderStamp } from '@/lib/notes'
 import {
   getHabits,
   getIdeas,
@@ -68,6 +69,7 @@ export async function WeekReview({ session, monday }: { session: Session; monday
           key={`week-${monday}`}
           target={{ kind: 'week', monday }}
           initial={Array.isArray(review?.review) ? review.review : null}
+          renderedAt={renderStamp()}
           placeholder="這週做得好的、斷掉的那天和原因、下週要調整什麼…"
         />
       </div>

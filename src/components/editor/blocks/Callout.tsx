@@ -4,6 +4,7 @@ import { defaultProps } from '@blocknote/core'
 import { createReactBlockSpec } from '@blocknote/react'
 import { useState } from 'react'
 import { IconPicker } from '@/components/notebooks/IconPicker'
+import { NoteIcon } from '@/components/notebooks/NoteIcon'
 
 /** Notion's callout: an icon and a tinted box. Colour comes from the block menu (背景色). */
 export const Callout = createReactBlockSpec(
@@ -29,7 +30,7 @@ export const Callout = createReactBlockSpec(
               onClick={() => setPicking(true)}
               className="grid size-7 place-items-center rounded-md text-xl leading-none hover:bg-black/5"
             >
-              {block.props.emoji || '💡'}
+              <NoteIcon icon={block.props.emoji || '💡'} />
             </button>
             {picking && (
               <IconPicker

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
 const REMEMBER_KEY = 'personal-os:email'
+const LOGIN_FAILED = '電子郵件或密碼不正確。連續輸入錯誤太多次時，請 10 分鐘後再試。'
 
 /**
  * Logs in through Payload's REST endpoint (it sets the session cookie).
@@ -44,15 +45,9 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         body: JSON.stringify({ email, password }),
       })
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { errors?: { message?: string }[] } | null
-        const message = body?.errors?.[0]?.message ?? ''
-        setError(
-          res.status === 429 || /locked/i.test(message)
-            ? '嘗試太多次，帳號暫時鎖定 10 分鐘'
-            : res.status === 401
-              ? '電子郵件或密碼不正確'
-              : '登入失敗，請再試一次',
-        )
+        // A wrong password and a locked account get the same message, so the
+        // form never reveals whether an email has an account.
+        setError(res.status >= 500 ? '登入失敗，請稍後再試一次' : LOGIN_FAILED)
         setPending(false)
         return
       }

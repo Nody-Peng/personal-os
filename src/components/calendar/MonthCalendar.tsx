@@ -62,7 +62,7 @@ export function MonthCalendar({ month, weeks, today, basePath, openWeek, importa
               scroll={false}
               aria-label={`打開第 ${isoWeek(monday)} 週的週筆記`}
               className={`flex flex-col items-center justify-start gap-1 pt-2 text-center transition-colors ${
-                isOpen ? 'bg-ink-strong text-white' : 'text-muted hover:bg-sunken hover:text-ink-strong'
+                isOpen ? 'bg-ink-strong text-on-ink' : 'text-muted hover:bg-sunken hover:text-ink-strong'
               }`}
               style={{ gridColumn: 1, gridRow: '1 / -1' }}
             >
@@ -89,7 +89,7 @@ export function MonthCalendar({ month, weeks, today, basePath, openWeek, importa
                       href={dayHref(day, today)}
                       className={`flex size-6 items-center justify-center rounded-full text-xs tabular-nums transition-colors md:size-7 md:text-sm ${
                         isToday
-                          ? 'bg-ink-strong font-semibold text-white'
+                          ? 'bg-ink-strong font-semibold text-on-ink'
                           : inMonth
                             ? 'text-ink-strong hover:bg-sunken'
                             : 'text-faint hover:bg-sunken'
@@ -164,7 +164,7 @@ export function MonthCalendar({ month, weeks, today, basePath, openWeek, importa
                 scroll={false}
                 title={bar.item.title}
                 className={`z-[1] mx-0.5 my-[2px] flex items-center truncate px-1.5 text-[11px] font-medium transition-colors md:text-xs ${
-                  bar.item.status === 'done' ? 'bg-sunken text-muted line-through' : 'bg-accent-soft text-accent hover:bg-accent hover:text-white'
+                  bar.item.status === 'done' ? 'bg-sunken text-muted line-through' : 'bg-accent-soft text-accent hover:bg-accent hover:text-on-ink'
                 } ${bar.continuesBefore ? 'rounded-l-none' : 'rounded-l-md'} ${bar.continuesAfter ? 'rounded-r-none' : 'rounded-r-md'}`}
                 style={{ gridColumn: `${bar.startCol + 2} / ${bar.endCol + 3}`, gridRow: bar.lane + 2 }}
               >

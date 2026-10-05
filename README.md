@@ -42,11 +42,13 @@ npm run dev           # 終端機 2：http://localhost:3000
 ## 部署到 Vercel + Supabase
 
 1. **建立 Supabase 專案**，到 Project Settings → Database → Connection string，複製 **Transaction pooler**（port 6543）的連線字串。
-2. **關閉 Supabase Data API**（Project Settings → Data API），或在 SQL Editor 對所有資料表執行 `alter table ... enable row level security;`。
-   Payload 用資料庫擁有者連線，不受影響；但若不關閉，持有 anon key 的人可能透過 Supabase API 讀到資料。
+2. **資料列層級安全（RLS）會自動開啟**：正式環境每次啟動、套用完 migration 之後，會對 `public` schema 裡還沒開 RLS 的資料表執行 `enable row level security`（不加任何 policy），之後 migration 新增的資料表也一樣。
+   Payload 用資料表擁有者連線，不受 RLS 影響；持有 anon key 的人透過 Supabase Data API 則讀寫不到任何資料。若啟動紀錄出現「Row level security is still off」或「Could not enable row level security」，到 SQL Editor 手動補上。
+   想多一層保護，可以再到 Project Settings → Data API 把 Data API 關掉（這個網站用不到它）。
 3. **在 Vercel 匯入這個 repo**。伺服器端函式固定跑在東京（`vercel.json` 的 `hnd1`），和 Supabase 的東京區（`ap-northeast-1`）同區，查詢延遲最低。設定環境變數：
    - `DATABASE_URL`：步驟 1 的連線字串（填入密碼）
    - `PAYLOAD_SECRET`：一段夠長的隨機字串（例如 `openssl rand -hex 32` 產生）
+   - `NEXT_PUBLIC_SERVER_URL`（選用，更嚴格的 CSRF 防護）：填入開網站會用到的每一個完整網址，多個用逗號分隔（例如 `https://journal.example.com,https://www.journal.example.com`）。填了之後，登入 cookie 只接受來自這些網址（加上 Vercel 自動提供的網址）的請求；從沒列到的網址打開時，頁面能看但所有儲存動作都會被當成未登入。不填則維持預設：cookie 的 SameSite=Lax 和 Next 對 server action 的來源檢查已經擋掉跨站寫入。
 4. 部署後第一次啟動會自動執行 `src/migrations/` 建立資料表。
 5. 開啟 `https://<你的網域>/admin/create-first-user` 建立帳號。之後只有已登入的人能新增帳號。
 6. 到 `/admin/globals/settings` 填入**托福考試日期**。

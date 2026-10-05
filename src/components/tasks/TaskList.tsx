@@ -41,6 +41,8 @@ export function TaskList({ kind, scope, items: initial, today, addLabel, compact
     startTransition(async () => {
       const result = await updateTask(task.id, { status })
       setError(result.ok ? null : result.error)
+      // Put the box back the way the server still has it.
+      if (!result.ok) setItems((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t)))
     })
   }
 
@@ -92,10 +94,10 @@ export function TaskList({ kind, scope, items: initial, today, addLabel, compact
                   disabled={migrated}
                   onClick={() => toggle(task)}
                   className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
-                    done ? 'border-ink-strong bg-ink-strong text-white' : 'border-line-strong bg-surface hover:border-ink'
+                    done ? 'border-ink-strong bg-ink-strong text-on-ink' : 'border-line-strong bg-surface hover:border-ink'
                   } ${migrated ? 'opacity-40' : ''}`}
                 >
-                  {done && <Check size={12} weight="bold" />}
+                  {done && <Check size={12} weight="bold" className="check-in" />}
                 </button>
                 <button
                   type="button"

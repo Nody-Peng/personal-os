@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { JournalCover } from '@/components/books/BookCover'
 import { addDays, daysInMonth, logicalDay, weekStart } from '@/lib/day'
+import { isRecordedLog } from '@/lib/dailyLog'
 import { getImportantTasks, getJournal, getLogsBetween } from '@/lib/queries'
 import { requireSession } from '@/lib/session'
 
@@ -29,7 +30,7 @@ export default async function YearPage({ params }: Props) {
     getLogsBetween(session, `${year}-01-01`, `${year}-12-31`),
     getImportantTasks(session, `${year}-01-01`, `${year}-12-31`),
   ])
-  const logged = new Set(logs.map((l) => l.date))
+  const logged = new Set(logs.filter(isRecordedLog).map((l) => l.date))
   const importantByDay = new Map<string, { done: number; total: number }>()
   for (const t of important) {
     if (!t.day || t.status === 'migrated') continue
@@ -103,7 +104,7 @@ export default async function YearPage({ params }: Props) {
                             : allDone
                               ? 'bg-green-ink/70'
                               : logged.has(d)
-                                ? 'bg-ink-strong/25'
+                                ? 'bg-scrim'
                                 : 'bg-sunken'
                         }`}
                       />
@@ -121,7 +122,7 @@ export default async function YearPage({ params }: Props) {
 
       <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
         <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-[3px] bg-ink-strong/25" /> 有紀錄
+          <span className="size-2.5 rounded-[3px] bg-scrim" /> 有紀錄
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-[3px] bg-green-ink/70" /> Important 全部完成

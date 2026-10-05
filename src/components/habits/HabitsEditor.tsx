@@ -67,7 +67,7 @@ export function HabitsEditor({ habits: initial, onClose }: { habits: HabitItem[]
   // fixed-position dialog inside it.
   return createPortal(
     <div className="fixed inset-0 z-40 flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label="調整每日習慣">
-      <button type="button" aria-label="關閉" onClick={close} className="absolute inset-0 bg-ink-strong/25" />
+      <button type="button" aria-label="關閉" onClick={close} className="absolute inset-0 bg-scrim" />
       <div className="relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-[0_0_48px_rgba(17,17,17,0.15)] md:rounded-2xl md:p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -193,7 +193,7 @@ function IconPicker({ value, onChange, name }: { value: HabitIconKey; onChange: 
           title={icon.label}
           onClick={() => onChange(icon.value)}
           className={`flex size-8 items-center justify-center rounded-md transition-colors ${
-            value === icon.value ? 'bg-ink-strong text-white' : 'text-muted hover:bg-sunken hover:text-ink-strong'
+            value === icon.value ? 'bg-ink-strong text-on-ink' : 'text-muted hover:bg-sunken hover:text-ink-strong'
           }`}
         >
           <HabitIcon icon={icon.value} size={16} />

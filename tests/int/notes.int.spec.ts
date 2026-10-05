@@ -16,7 +16,7 @@ import {
   type PageNode,
 } from '@/lib/notes'
 
-const node = (id: number, parent: number | null, position: number): PageNode => ({ id, parent, position, title: `p${id}`, icon: '', kind: 'page' })
+const node = (id: number, parent: number | null, position: number): PageNode => ({ id, parent, position, title: `p${id}`, icon: '', kind: 'page', favorite: false })
 
 // 1
 // ├─ 2

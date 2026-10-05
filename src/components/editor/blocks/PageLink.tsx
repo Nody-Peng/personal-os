@@ -8,6 +8,7 @@ import { findPages, type PageLinkInfo } from '@/app/(frontend)/notebook-actions'
 import { primePageLink, usePageLink } from '@/lib/pageLinks'
 import { UNTITLED } from '@/lib/notes'
 import { useNoteContext } from '../NoteContext'
+import { NoteIcon } from '@/components/notebooks/NoteIcon'
 
 /**
  * A page inside the text. `child` is a sub-page created right here (it also
@@ -82,7 +83,7 @@ export const PageLink = createReactBlockSpec(
           }}
         >
           <span className="relative grid size-5 shrink-0 place-items-center text-base leading-none text-muted">
-            {info.icon || (info.kind === 'board' ? <Kanban size={18} /> : <FileText size={18} />)}
+            <NoteIcon icon={info.icon} fallback={info.kind === 'board' ? <Kanban size={18} /> : <FileText size={18} />} />
             {mode === 'link' && (
               <ArrowUpRight size={10} weight="bold" className="absolute -right-1 -bottom-0.5 rounded-sm bg-surface text-ink" />
             )}
@@ -123,7 +124,7 @@ function LinkPicker({ exclude, onPick, onCancel }: { exclude?: number; onPick: (
   }, [query, exclude])
 
   return (
-    <div className="note-linkpicker" contentEditable={false}>
+    <div className="note-linkpicker" contentEditable={false} data-own-escape>
       <div className="flex items-center gap-2 border-b border-line px-3">
         <MagnifyingGlass size={16} className="text-muted" />
         <input
@@ -164,7 +165,7 @@ function LinkPicker({ exclude, onPick, onCancel }: { exclude?: number; onPick: (
               className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm ${i === active ? 'bg-sunken' : ''}`}
             >
               <span className="grid size-5 place-items-center text-base leading-none text-muted">
-                {p.icon || (p.kind === 'board' ? <Kanban size={16} /> : <FileText size={16} />)}
+                <NoteIcon icon={p.icon} fallback={p.kind === 'board' ? <Kanban size={16} /> : <FileText size={16} />} />
               </span>
               <span className={`truncate ${p.title ? 'text-ink-strong' : 'text-muted'}`}>{p.title || UNTITLED}</span>
               <span className="ml-auto shrink-0 text-xs text-muted">{p.notebookTitle}</span>

@@ -5,7 +5,8 @@ import { Suspense, createContext, useCallback, useContext, useEffect, useMemo, u
 import { createBoard, createPage, movePage, trashPage } from '@/app/(frontend)/notebook-actions'
 import type { NoteEditorContext } from '@/components/editor/NoteContext'
 import { dropItems } from '@/lib/boardStore'
-import { rememberTree, treeWithEdits } from '@/lib/noteCache'
+import { rememberTree, treeWithEdits, useTreeStamp } from '@/lib/noteCache'
+import { closePanel, openPanel } from '@/lib/panelHistory'
 import { ancestorsOf, applyMove, childrenOf, subtreeIds, type NotebookItem, type PageNode } from '@/lib/notes'
 import { ItemPeek } from './board/ItemPeek'
 import { MoveDialog } from './MoveDialog'
@@ -21,7 +22,7 @@ type NotebookContextValue = {
   expanded: Set<number>
   toggle: (id: number, open?: boolean) => void
   addPage: (parent: number | null) => void
-  patchPage: (id: number, patch: Partial<Pick<PageNode, 'title' | 'icon'>>) => void
+  patchPage: (id: number, patch: Partial<Pick<PageNode, 'title' | 'icon' | 'favorite'>>) => void
   /** `parentHint`: where to go if the page isn't in the tree (board cards). */
   trash: (id: number, parentHint?: number | null) => void
   move: (id: number, parent: number | null, index: number) => void
@@ -30,6 +31,8 @@ type NotebookContextValue = {
   /** A page beside the current one (board cards): ?peek=<id>. */
   openPeek: (id: number) => void
   notify: (error: string) => void
+  /** A short confirmation (「已複製連結」). */
+  say: (message: string) => void
   openDrawer: () => void
   openSearch: () => void
   openTrash: () => void
@@ -75,6 +78,11 @@ export function useNotebook(): NotebookContextValue {
   const value = useContext(NotebookContext)
   if (!value) throw new Error('useNotebook needs NotebookShell')
   return value
+}
+
+/** Null outside a notebook (a block pasted into a day or week note). */
+export function useOptionalNotebook(): NotebookContextValue | null {
+  return useContext(NotebookContext)
 }
 
 const urlOf = (notebookId: number, pageId: number) => `/notebooks/${notebookId}/${pageId}`
@@ -126,6 +134,7 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
 
   const [notebook, setNotebook] = useState(initialNotebook)
   const [pages, setPagesState] = useState(() => treeWithEdits(initialNotebook.id, serverPages, renderedAt))
+  useTreeStamp(initialNotebook.id, renderedAt)
   const expandedRaw = useSyncExternalStore(
     subscribeExpanded,
     () => readExpanded(initialNotebook.id),
@@ -136,7 +145,9 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
   const [drawerAt, setDrawerAt] = useState<string | null>(null)
   const drawer = drawerAt === pathname
   const [dialog, setDialog] = useState<'search' | 'trash' | 'settings' | { move: number } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; tone: 'error' | 'info' } | null>(null)
+  const setError = useCallback((text: string | null) => setToast(text ? { text, tone: 'error' } : null), [])
+  const say = useCallback((text: string) => setToast({ text, tone: 'info' }), [])
   const pagesRef = useRef(pages)
 
   const setPages = useCallback(
@@ -168,21 +179,26 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
   }, [currentId, initialNotebook.id])
 
   useEffect(() => {
-    if (!error) return
-    const timer = window.setTimeout(() => setError(null), 5000)
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), toast.tone === 'error' ? 5000 : 2200)
     return () => window.clearTimeout(timer)
-  }, [error])
+  }, [toast])
 
   useSearchShortcut(() => setDialog('search'))
 
-  // Uploads and blocks deep inside the editor report errors through an event.
+  // Uploads and blocks deep inside the editor report errors (and confirmations) through events.
   useEffect(() => {
     const onError = (e: Event) => setError(String((e as CustomEvent<string>).detail))
+    const onInfo = (e: Event) => say(String((e as CustomEvent<string>).detail))
     window.addEventListener('notes:error', onError)
-    return () => window.removeEventListener('notes:error', onError)
-  }, [])
+    window.addEventListener('notes:info', onInfo)
+    return () => {
+      window.removeEventListener('notes:error', onError)
+      window.removeEventListener('notes:info', onInfo)
+    }
+  }, [setError, say])
 
-  const openPeek = useCallback((id: number) => router.push(`${pathname}?peek=${id}`, { scroll: false }), [router, pathname])
+  const openPeek = useCallback((id: number) => openPanel(router, `${pathname}?peek=${id}`), [router, pathname])
 
   const addPage = useCallback(
     async (parent: number | null) => {
@@ -193,11 +209,11 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
       if (parent != null) toggle(parent, true)
       router.push(urlOf(initialNotebook.id, page.id))
     },
-    [initialNotebook.id, router, setPages, toggle],
+    [initialNotebook.id, router, setPages, setError, toggle],
   )
 
   const patchPage = useCallback(
-    (id: number, patch: Partial<Pick<PageNode, 'title' | 'icon'>>) =>
+    (id: number, patch: Partial<Pick<PageNode, 'title' | 'icon' | 'favorite'>>) =>
       setPages((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p))),
     [setPages],
   )
@@ -222,7 +238,7 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
         dropItems(parentHint, result.data ?? [id])
       }
     },
-    [currentId, initialNotebook.id, router, setPages],
+    [currentId, initialNotebook.id, router, setPages, setError],
   )
 
   const move = useCallback(
@@ -240,7 +256,7 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
         setError(result.error)
       }
     },
-    [setPages, toggle],
+    [setPages, setError, toggle],
   )
 
   const restored = useCallback(
@@ -265,13 +281,14 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
       restored,
       openPeek,
       notify: setError,
+      say,
       openDrawer: () => setDrawerAt(pathname),
       openSearch: () => setDialog('search'),
       openTrash: () => setDialog('trash'),
       openSettings: () => setDialog('settings'),
       openMove: (id: number) => setDialog({ move: id }),
     }),
-    [notebook, pages, currentId, expanded, toggle, addPage, patchPage, trash, move, restored, openPeek, pathname],
+    [notebook, pages, currentId, expanded, toggle, addPage, patchPage, trash, move, restored, openPeek, pathname, setError, say],
   )
 
   return (
@@ -283,7 +300,7 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
 
         {drawer && (
           <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="頁面目錄">
-            <button type="button" aria-label="關閉目錄" onClick={() => setDrawerAt(null)} className="modal-scrim absolute inset-0 bg-ink-strong/25" />
+            <button type="button" aria-label="關閉目錄" onClick={() => setDrawerAt(null)} className="modal-scrim absolute inset-0 bg-scrim" />
             <aside className="drawer-in absolute inset-y-0 left-0 w-[86%] max-w-xs border-r border-line bg-canvas shadow-[0_0_48px_rgba(17,17,17,0.18)]">
               <Sidebar onClose={() => setDrawerAt(null)} />
             </aside>
@@ -293,12 +310,15 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
         <div className="min-w-0 flex-1">{children}</div>
       </div>
 
-      {error && (
+      {toast && (
         <p
-          role="alert"
-          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-red-ink/20 bg-red-soft px-4 py-2 text-sm text-red-ink shadow-[0_12px_32px_-16px_rgba(17,17,17,0.3)]"
+          key={toast.text}
+          role={toast.tone === 'error' ? 'alert' : 'status'}
+          className={`toast-in fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border px-4 py-2 text-sm shadow-[0_12px_32px_-16px_rgba(17,17,17,0.3)] ${
+            toast.tone === 'error' ? 'border-red-ink/20 bg-red-soft text-red-ink' : 'border-line bg-ink-strong text-canvas'
+          }`}
         >
-          {error}
+          {toast.text}
         </p>
       )}
 
@@ -320,5 +340,5 @@ function PeekFromUrl() {
   const pathname = usePathname()
   const id = Number(useSearchParams().get('peek'))
   if (!Number.isInteger(id) || id <= 0) return null
-  return <ItemPeek key={id} id={id} onClose={() => router.push(pathname, { scroll: false })} />
+  return <ItemPeek key={id} id={id} onClose={() => closePanel(router, pathname)} />
 }

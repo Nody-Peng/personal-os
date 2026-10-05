@@ -8,12 +8,20 @@ type Props = {
   cover: string
   position: number
   onChange: (patch: { cover?: string; coverPosition?: number }) => void
+  /** Locked page: the picture only, no controls. */
+  readOnly?: boolean
 }
 
 /** Full-width banner image above the title (Notion's page cover). */
-export function PageCover({ cover, position, onChange }: Props) {
+export function PageCover({ cover, position, onChange, readOnly = false }: Props) {
   const [moving, setMoving] = useState(false)
   const [pos, setPos] = useState(position)
+  // A new picture (or a position saved elsewhere) starts from the stored position.
+  const [shown, setShown] = useState({ cover, position })
+  if (shown.cover !== cover || shown.position !== position) {
+    setShown({ cover, position })
+    setPos(position)
+  }
   const drag = useRef<{ y: number; start: number; height: number } | null>(null)
   const picker = useCoverPicker((url) => onChange({ cover: url, coverPosition: 50 }))
 
@@ -41,7 +49,8 @@ export function PageCover({ cover, position, onChange }: Props) {
       <img src={cover} alt="" draggable={false} className="h-full w-full object-cover select-none" style={{ objectPosition: `center ${pos}%` }} />
       {picker.input}
       <div
-        className={`absolute right-3 bottom-3 flex gap-1 rounded-lg border border-line bg-surface/95 p-1 text-xs shadow-[0_8px_24px_-12px_rgba(17,17,17,0.3)] transition-opacity ${
+        hidden={readOnly}
+        className={`print:hidden absolute right-3 bottom-3 flex gap-1 rounded-lg border border-line bg-surface/95 p-1 text-xs shadow-[0_8px_24px_-12px_rgba(17,17,17,0.3)] transition-opacity ${
           moving ? 'opacity-100' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100'
         }`}
       >
@@ -50,7 +59,7 @@ export function PageCover({ cover, position, onChange }: Props) {
             <span className="px-2 py-1 text-muted">上下拖曳調整位置</span>
             <button
               type="button"
-              className="rounded-md bg-ink-strong px-2 py-1 font-medium text-white"
+              className="rounded-md bg-ink-strong px-2 py-1 font-medium text-on-ink"
               onClick={() => {
                 setMoving(false)
                 onChange({ coverPosition: pos })

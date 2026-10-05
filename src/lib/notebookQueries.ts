@@ -22,6 +22,8 @@ export async function getNotebooks({ payload, user }: Session): Promise<Notebook
     payload.find({ collection: 'notebooks', sort: ['position', 'id'], pagination: false, user, overrideAccess: false }),
     payload.find({
       collection: 'note-pages',
+      // Board cards are rows of their board, not pages of the notebook.
+      where: { kind: { not_equals: 'item' } },
       select: { notebook: true },
       depth: 0,
       pagination: false,
@@ -44,7 +46,7 @@ export async function getPageTree({ payload, user }: Session, notebookId: number
     collection: 'note-pages',
     // Board items live on their board, not in the sidebar.
     where: { and: [{ notebook: { equals: notebookId } }, { kind: { not_equals: 'item' } }] },
-    select: { title: true, icon: true, parent: true, position: true, kind: true },
+    select: { title: true, icon: true, parent: true, position: true, kind: true, favorite: true },
     sort: ['position', 'id'],
     depth: 0,
     pagination: false,

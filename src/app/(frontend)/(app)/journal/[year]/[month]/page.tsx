@@ -6,8 +6,10 @@ import { MonthCalendar } from '@/components/calendar/MonthCalendar'
 import { WeekDrawer } from '@/components/calendar/WeekDrawer'
 import { BlockEditor } from '@/components/editor/BlockEditor'
 import { WeekNote } from '@/components/week/WeekNote'
-import { DAY_PATTERN, addDays, addMonths, daysInMonth, logicalDay, monthWeeks, weekStart } from '@/lib/day'
+import { addDays, addMonths, daysInMonth, isDay, logicalDay, monthWeeks, weekStart } from '@/lib/day'
 import { getDatedTasks, getHabits, getImportantTasks, getLogsBetween, getMonthNote, getWeeklyTasks, habitIdsOf, habitsForPeriod } from '@/lib/queries'
+import { isRecordedLog } from '@/lib/dailyLog'
+import { renderStamp } from '@/lib/notes'
 import { requireSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +39,7 @@ export default async function MonthPage({ params, searchParams }: Props) {
   const today = logicalDay()
 
   const { week } = await searchParams
-  const openWeek = week && DAY_PATTERN.test(week) && weekStart(week) === week ? week : null
+  const openWeek = week && isDay(week) && weekStart(week) === week ? week : null
 
   const weeks = monthWeeks(month)
   const from = weeks[0]
@@ -55,14 +57,14 @@ export default async function MonthPage({ params, searchParams }: Props) {
   ])
 
   const days = Object.fromEntries(
-    logs.map((l) => [l.date, { logged: true, habitsDone: habitIdsOf(l) }]),
+    logs.map((l) => [l.date, { logged: isRecordedLog(l), habitsDone: habitIdsOf(l) }]),
   )
   const inMonth = <T extends { date: string }>(xs: T[]) => xs.filter((x) => x.date >= monthFirst && x.date <= monthLast)
   const monthLogs = inMonth(logs)
-  const habits = habitsForPeriod(allHabits, logs)
+  const habits = habitsForPeriod(allHabits, monthLogs)
   const monthImportant = important.filter((t) => t.day && t.day >= monthFirst && t.day <= monthLast && t.status !== 'migrated')
   const stats = [
-    { label: '有紀錄的天數', value: `${monthLogs.length} 天` },
+    { label: '有紀錄的天數', value: `${monthLogs.filter(isRecordedLog).length} 天` },
     { label: 'Important 完成', value: `${monthImportant.filter((t) => t.status === 'done').length}/${monthImportant.length}` },
     { label: '托福', value: `${(monthLogs.reduce((s, l) => s + (l.toeflMinutes ?? 0), 0) / 60).toFixed(1)} 小時` },
     ...habits.map((h) => ({ label: h.name, value: `${monthLogs.filter((l) => habitIdsOf(l).includes(h.id)).length} 天` })),
@@ -135,6 +137,7 @@ export default async function MonthPage({ params, searchParams }: Props) {
             key={`month-${month}`}
             target={{ kind: 'month', month }}
             initial={Array.isArray(note?.review) ? note.review : null}
+            renderedAt={renderStamp()}
             placeholder="這個月最大的進步、最想改的習慣、下個月的重點…"
           />
         </div>

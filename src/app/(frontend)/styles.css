@@ -3,9 +3,12 @@
 /*
  * Design language: warm monochrome "document" UI (taste-skill / minimalist-ui).
  * One accent (muted cobalt) carries interaction, focus and chart marks; the
- * pastel pairs are reserved for small semantic tags. Light theme only, except
- * the dark /kiosk screen that arrives in v2.
+ * pastel pairs are reserved for small semantic tags. Light and dark themes:
+ * every colour below is a token, redefined under [data-theme='dark'] (set on
+ * <html> by lib/theme.ts), so components never hard-code a colour.
  */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 @theme {
   --color-canvas: #f7f6f3;
   --color-surface: #ffffff;
@@ -27,12 +30,78 @@
   --color-red-soft: #fdebec;
   --color-red-ink: #9f2f2d;
 
+  /* Text on an ink-strong (or accent / green-ink) fill: white in light, dark in dark. */
+  --color-on-ink: var(--color-surface);
+  /* Behind dialogs and side panels. */
+  --color-scrim: rgb(17 17 17 / 0.22);
+
+  /* Page icon colours (lib/noteIcons.ts), Notion's palette. */
+  --color-icon-default: #37352f;
+  --color-icon-gray: #91918e;
+  --color-icon-brown: #a27763;
+  --color-icon-orange: #d9730d;
+  --color-icon-yellow: #cb912f;
+  --color-icon-green: #448361;
+  --color-icon-blue: #337ea9;
+  --color-icon-purple: #9065b0;
+  --color-icon-pink: #c14c8a;
+  --color-icon-red: #d44c47;
+
   --font-sans:
     var(--font-geist-sans), 'PingFang TC', 'Noto Sans TC', 'Microsoft JhengHei', system-ui,
     sans-serif;
   --font-mono: var(--font-geist-mono), 'SF Mono', ui-monospace, monospace;
+  /* A page set to 襯線: Latin from the system, Chinese from Songti (Apple) or Noto Serif TC (PageView loads it). */
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti TC', 'Noto Serif TC', 'PMingLiU', serif;
+  /* Apple devices keep their own emoji; everything else gets Noto (layout.tsx). */
+  --font-emoji: 'Apple Color Emoji', var(--font-noto-emoji), 'Noto Color Emoji', 'Segoe UI Emoji', sans-serif;
 
   --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Dark: warm greys (not blue-black), the page a step lighter than the frame,
+   a brighter cobalt, and the pastel tag pairs turned into muted fills. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-canvas: #191918;
+  --color-surface: #202020;
+  --color-sunken: #2a2a28;
+  --color-line: #2f2f2d;
+  --color-line-strong: #41403d;
+  --color-ink: #d6d4cf;
+  --color-ink-strong: #f2f1ed;
+  --color-muted: #9c9a95;
+  --color-faint: #6e6c68;
+
+  --color-accent: #6ea6e6;
+  --color-accent-soft: #1c2c3e;
+
+  --color-green-soft: #1e2b21;
+  --color-green-ink: #8cc596;
+  --color-yellow-soft: #322a1b;
+  --color-yellow-ink: #e2b866;
+  --color-red-soft: #3a2020;
+  --color-red-ink: #f1918d;
+
+  --color-scrim: rgb(0 0 0 / 0.55);
+
+  --color-icon-default: #d4d4d4;
+  --color-icon-gray: #9b9b9b;
+  --color-icon-brown: #ba856f;
+  --color-icon-orange: #c77d48;
+  --color-icon-yellow: #ca984d;
+  --color-icon-green: #529e72;
+  --color-icon-blue: #5e87c9;
+  --color-icon-purple: #9d68d3;
+  --color-icon-pink: #d15796;
+  --color-icon-red: #df5452;
+}
+
+/* Switching themes recolours everything at once instead of each transition firing. */
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
 }
 
 @layer base {
@@ -114,10 +183,10 @@
   }
   .btn-primary {
     background: var(--color-ink-strong);
-    color: #fff;
+    color: var(--color-on-ink);
   }
   .btn-primary:hover {
-    background: #333333;
+    background: color-mix(in oklab, var(--color-ink-strong) 82%, var(--color-canvas));
   }
   .btn-quiet {
     background: var(--color-surface);
@@ -186,19 +255,146 @@
 .drawer-in {
   animation: drawer-in 260ms var(--ease-out-soft) both;
 }
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+.toast-in {
+  animation: toast-in 240ms var(--ease-out-soft) both;
+}
+/* Menus and pickers grow out of what opened them. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+.pop-in {
+  animation: pop-in 160ms var(--ease-out-soft) both;
+  transform-origin: top right;
+}
+.pop-in-left {
+  transform-origin: top left;
+}
+/* A page (or a card opened full-page) settles in. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.page-in {
+  animation: page-in 360ms var(--ease-out-soft) both;
+}
+/* A tick lands in its box. */
+@keyframes check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+}
+.check-in {
+  animation: check-in 260ms var(--ease-out-soft) both;
+}
+/* Phone bottom sheet (AppNav 更多). */
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+.sheet-in {
+  animation: sheet-in 320ms var(--ease-out-soft) both;
+}
+/* Tab bar items give under the thumb. */
+.tab-press {
+  transition:
+    color 150ms ease,
+    transform 120ms ease;
+}
+.tab-press:active {
+  transform: scale(0.92);
+}
+/* The theme icon turns in when it changes; a starred page's star pops. */
+@keyframes spin-in {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+}
+.theme-icon {
+  animation: spin-in 320ms var(--ease-out-soft) both;
+}
+@keyframes pop {
+  40% {
+    transform: scale(1.3);
+  }
+}
+.star-pop {
+  animation: pop 360ms var(--ease-out-soft);
+}
 @media (prefers-reduced-motion: reduce) {
   .modal-scrim,
   .modal-panel,
-  .drawer-in {
+  .drawer-in,
+  .toast-in,
+  .sheet-in,
+  .theme-icon,
+  .star-pop,
+  .pop-in,
+  .page-in,
+  .check-in {
     animation: none;
+  }
+  .tab-press:active {
+    transform: none;
+  }
+}
+
+/* 列印／存成 PDF: just the page. */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  aside,
+  nav[aria-label='頁面路徑'],
+  .bn-side-menu,
+  .bn-formatting-toolbar,
+  .note-code-bar {
+    display: none !important;
+  }
+  .note-page {
+    max-width: none !important;
+    padding: 0 !important;
   }
 }
 
 /* BlockNote editor, blended into the page (no box, app typography). */
-.journal-editor.bn-container {
+/* [data-color-scheme] outranks BlockNote's own light/dark variables. */
+.journal-editor.bn-container,
+.journal-editor.bn-container[data-color-scheme] {
   --bn-colors-editor-background: transparent;
   --bn-colors-editor-text: var(--color-ink);
   --bn-colors-side-menu: var(--color-faint);
+  --bn-colors-menu-background: var(--color-surface);
+  --bn-colors-menu-text: var(--color-ink);
+  --bn-colors-tooltip-background: var(--color-sunken);
+  --bn-colors-tooltip-text: var(--color-ink);
+  --bn-colors-hovered-background: var(--color-sunken);
+  --bn-colors-hovered-text: var(--color-ink-strong);
+  --bn-colors-selected-background: var(--color-accent-soft);
+  --bn-colors-selected-text: var(--color-accent);
+  --bn-colors-disabled-background: var(--color-sunken);
+  --bn-colors-disabled-text: var(--color-faint);
+  --bn-colors-border: var(--color-line);
   --bn-colors-highlights-blue-background: var(--color-accent-soft);
   --bn-font-family: var(--font-sans);
   --bn-border-radius-medium: 8px;
@@ -227,6 +423,23 @@
   min-height: 40vh;
   font-size: 1.0625rem;
   line-height: 1.7;
+}
+
+/* Page options (notebooks/PageMenu): typeface and small text for the title and the text. */
+.note-font-serif {
+  --page-font: var(--font-serif);
+}
+.note-font-mono {
+  --page-font: var(--font-mono);
+}
+.note-page .note-title,
+.note-page .journal-editor .bn-editor,
+.note-page .journal-editor .bn-default-styles {
+  font-family: var(--page-font, var(--font-sans));
+}
+.note-small .note-editor .bn-editor {
+  font-size: 0.9375rem;
+  line-height: 1.65;
 }
 
 /* Notion-style blocks (components/editor/blocks). */
@@ -307,6 +520,124 @@ a.note-pagelink:hover {
 }
 .note-board {
   width: 100%;
+}
+/* Page icons (notebooks/NoteIcon) and the icon picker. */
+.note-emoji {
+  font-family: var(--font-emoji);
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+}
+.note-picker-section {
+  content-visibility: auto;
+}
+/* Web bookmark (blocks/BookmarkBlock): text on the left, the page's picture on the right. */
+.note-bookmark-card {
+  display: flex;
+  width: 100%;
+  min-height: 92px;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.note-bookmark-card:hover {
+  background: var(--color-canvas);
+  border-color: var(--color-line-strong);
+}
+.note-bookmark-image {
+  flex: 0 0 32%;
+  max-width: 240px;
+  border-left: 1px solid var(--color-line);
+  background: var(--color-sunken);
+}
+/* Embed (blocks/EmbedBlock): drag the bottom edge to change the height. */
+.note-embed-handle {
+  position: relative;
+  height: 12px;
+  margin-top: -6px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.note-embed-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 40px;
+  height: 4px;
+  margin-left: -20px;
+  border-radius: 999px;
+  background: var(--color-line-strong);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.note-embed:hover .note-embed-handle::after,
+.note-embed-handle:active::after {
+  opacity: 1;
+}
+/* Code block (blocks/CodeBlock): light, with the language picker and copy at the top right. */
+.journal-editor .bn-block-content[data-content-type='codeBlock'] {
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+}
+.note-code {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  background: var(--color-canvas);
+}
+.note-code-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 4px 4px 0;
+}
+.note-code pre {
+  margin: 0;
+  padding: 0 16px 14px;
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 2;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--color-ink);
+}
+/* Shiki writes both palettes (--shiki-light / --shiki-dark) on every token. */
+.note-code .shiki {
+  color: var(--shiki-light);
+}
+[data-theme='dark'] .note-code .shiki {
+  color: var(--shiki-dark);
+}
+.note-code pre.note-code-wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.note-code code {
+  font-family: inherit;
+}
+@media (hover: hover) {
+  .note-code-copy,
+  .note-code-tool {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  .note-code:hover .note-code-copy,
+  .note-code:hover .note-code-tool,
+  .note-code-copy:focus-visible,
+  .note-code-tool:focus-visible,
+  .note-code-tool[aria-pressed='true'] {
+    opacity: 1;
+  }
 }
 .note-editor-compact .bn-editor {
   min-height: 30vh;

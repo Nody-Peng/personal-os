@@ -9,7 +9,7 @@ export const WeeklyReviews: CollectionConfig = {
   labels: { singular: '週筆記', plural: '週筆記' },
   admin: {
     useAsTitle: 'weekStart',
-    defaultColumns: ['weekStart', 'nextTheme', 'updatedAt'],
+    defaultColumns: ['weekStart', 'theme', 'updatedAt'],
   },
   defaultSort: '-weekStart',
   access: {

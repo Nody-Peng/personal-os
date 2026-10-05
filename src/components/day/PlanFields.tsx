@@ -56,10 +56,10 @@ function PartList({ part, label }: { part: DayPartKey; label: string }) {
                 aria-label={`${item.done ? '標示未完成' : '完成'}：${item.text || '（空白）'}`}
                 onClick={() => save(items.map((x) => (x.id === item.id ? { ...x, done: !x.done } : x)))}
                 className={`flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
-                  item.done ? 'border-ink-strong bg-ink-strong text-white' : 'border-line-strong bg-surface hover:border-ink'
+                  item.done ? 'border-ink-strong bg-ink-strong text-on-ink' : 'border-line-strong bg-surface hover:border-ink'
                 }`}
               >
-                {item.done && <Check size={11} weight="bold" />}
+                {item.done && <Check size={11} weight="bold" className="check-in" />}
               </button>
               <input
                 data-item

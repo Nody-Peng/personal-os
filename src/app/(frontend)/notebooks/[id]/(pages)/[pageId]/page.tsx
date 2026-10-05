@@ -45,6 +45,11 @@ export default async function NotePage({ params }: Props) {
         content: Array.isArray(page.content) ? page.content : null,
         cover: page.cover ?? '',
         coverPosition: page.coverPosition ?? 50,
+        font: page.font ?? 'default',
+        smallText: page.smallText ?? false,
+        fullWidth: page.fullWidth ?? false,
+        locked: page.locked ?? false,
+        favorite: page.favorite ?? false,
       }}
       renderedAt={renderStamp()}
     />

@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback } from 'react'
+import { closePanel, openPanel } from './panelHistory'
 
 /** The task panel is driven by ?task=<id>, so Back closes it and links can share it. */
 export function useTaskPeek() {
@@ -21,11 +22,8 @@ export function useTaskPeek() {
     [params, pathname],
   )
 
-  const open = useCallback((id: number) => router.push(withTask(id), { scroll: false }), [router, withTask])
-  const close = useCallback(() => {
-    router.replace(withTask(null), { scroll: false })
-    router.refresh()
-  }, [router, withTask])
+  const open = useCallback((id: number) => openPanel(router, withTask(id)), [router, withTask])
+  const close = useCallback(() => closePanel(router, withTask(null), { refresh: true }), [router, withTask])
 
   return { openId, open, close }
 }

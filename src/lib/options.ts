@@ -80,6 +80,14 @@ export const PAGE_KINDS = [
 ] as const
 export type PageKind = (typeof PAGE_KINDS)[number]['value']
 
+/** A notebook page's typeface (Notion's ••• → 預設 / 襯線 / 等寬). */
+export const PAGE_FONTS = [
+  { label: '預設', value: 'default' },
+  { label: '襯線', value: 'serif' },
+  { label: '等寬', value: 'mono' },
+] as const
+export type PageFont = (typeof PAGE_FONTS)[number]['value']
+
 /** Board columns, in order. `tone` picks the pastel pair for the tag. */
 export const ITEM_STATUSES = [
   { label: '未開始', value: 'todo', tone: 'gray' },

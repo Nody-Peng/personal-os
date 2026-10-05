@@ -2,16 +2,17 @@
 
 import { revalidatePath } from 'next/cache'
 import { cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
-import { DAY_PATTERN, MONTH_PATTERN, addDays, weekStart } from '@/lib/day'
+import { addDays, isDay, isMonth, weekStart } from '@/lib/day'
 import { requireActionSession } from '@/lib/session'
 import { MAX_IMPORTANT_PER_DAY, type TaskKind, type TaskStatus } from '@/lib/tasks'
 import { toTaskItem, type TaskDetail, type TaskItem } from '@/lib/taskItems'
 import { HABIT_ICONS, MAX_ACTIVE_HABITS, type HabitIconKey } from '@/lib/habits'
+import { upsertOne } from '@/lib/upsert'
 import { currentMonday, writeWeekTheme } from '@/lib/weekThemes'
 
 const optionalDay = (value: unknown): string | null => {
   if (value == null || value === '') return null
-  if (typeof value !== 'string' || !DAY_PATTERN.test(value)) throw new Error('日期格式錯誤')
+  if (!isDay(value)) throw new Error('日期格式錯誤')
   return value
 }
 
@@ -80,6 +81,10 @@ export async function updateTask(id: number, patch: TaskPatch): Promise<ActionRe
     }
     if ('status' in patch) {
       if (patch.status !== 'todo' && patch.status !== 'done') throw new Error('狀態錯誤')
+      // A migrated original lives on as its copy on the next day; ticking it
+      // (from a stale tab) would bring back a duplicate.
+      const current = await payload.findByID({ collection: 'tasks', id, depth: 0, user, overrideAccess: false })
+      if (current.status === 'migrated') throw new Error('這件已經移到下一天了，請在那一天勾選')
       data.status = patch.status
     }
     if ('dueDate' in patch) data.dueDate = optionalDay(patch.dueDate)
@@ -126,24 +131,39 @@ export async function moveTaskToNextDay(id: number): Promise<ActionResult> {
     })
     if (totalDocs >= MAX_IMPORTANT_PER_DAY) throw new Error(`明天已經有 ${MAX_IMPORTANT_PER_DAY} 件 Important`)
 
-    await payload.create({
-      collection: 'tasks',
-      data: {
-        kind: 'important',
-        title: task.title,
-        status: 'todo',
-        position: totalDocs,
-        day: nextDay,
-        dueDate: task.dueDate,
-        startDate: task.startDate,
-        endDate: task.endDate,
-        body: task.body,
-        migratedFrom: task.id,
-      },
-      user,
-      overrideAccess: false,
-    })
-    await payload.update({ collection: 'tasks', id, data: { status: 'migrated' }, user, overrideAccess: false })
+    // Copy and mark the original together. `migratedFrom` is unique, so a second
+    // device migrating the same task at the same moment fails instead of
+    // leaving two copies.
+    const alreadyMigrated = async (taskId: number) =>
+      (await payload.count({ collection: 'tasks', where: { migratedFrom: { equals: taskId } }, user, overrideAccess: false })).totalDocs > 0
+    const transactionID = await payload.db.beginTransaction()
+    const req = transactionID ? { transactionID } : undefined
+    try {
+      await payload.create({
+        collection: 'tasks',
+        data: {
+          kind: 'important',
+          title: task.title,
+          status: 'todo',
+          position: totalDocs,
+          day: nextDay,
+          dueDate: task.dueDate,
+          startDate: task.startDate,
+          endDate: task.endDate,
+          body: task.body,
+          migratedFrom: task.id,
+        },
+        user,
+        overrideAccess: false,
+        req,
+      })
+      await payload.update({ collection: 'tasks', id, data: { status: 'migrated' }, user, overrideAccess: false, req })
+      if (transactionID) await payload.db.commitTransaction(transactionID)
+    } catch (error) {
+      if (transactionID) await payload.db.rollbackTransaction(transactionID)
+      if (await alreadyMigrated(id)) throw new Error('這件已經移到下一天了')
+      throw error
+    }
     refresh()
     return { ok: true }
   } catch (error) {
@@ -170,24 +190,12 @@ export type WeekNotePatch = Partial<{ review: unknown[] | null; themeReason: str
 
 export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promise<ActionResult> {
   try {
-    if (!DAY_PATTERN.test(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
-    const { payload, user } = await requireActionSession()
+    if (!isDay(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
+    const session = await requireActionSession()
     const data: WeekNotePatch = {}
     if ('review' in patch) data.review = cleanBlocks(patch.review)
     if ('themeReason' in patch) data.themeReason = cleanText(patch.themeReason, 2000)
-
-    const { docs } = await payload.find({
-      collection: 'weekly-reviews',
-      where: { weekStart: { equals: monday } },
-      limit: 1,
-      user,
-      overrideAccess: false,
-    })
-    if (docs[0]) {
-      await payload.update({ collection: 'weekly-reviews', id: docs[0].id, data, user, overrideAccess: false })
-    } else {
-      await payload.create({ collection: 'weekly-reviews', data: { weekStart: monday, ...data }, user, overrideAccess: false })
-    }
+    await upsertOne(session, 'weekly-reviews', { weekStart: { equals: monday } }, data, { weekStart: monday, ...data })
     return { ok: true }
   } catch (error) {
     return fail(error)
@@ -198,21 +206,10 @@ export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promis
 
 export async function saveMonthNote(month: string, review: unknown[] | null): Promise<ActionResult> {
   try {
-    if (!MONTH_PATTERN.test(month)) throw new Error('月份錯誤')
-    const { payload, user } = await requireActionSession()
+    if (!isMonth(month)) throw new Error('月份錯誤')
+    const session = await requireActionSession()
     const data = { review: cleanBlocks(review) }
-    const { docs } = await payload.find({
-      collection: 'monthly-notes',
-      where: { month: { equals: month } },
-      limit: 1,
-      user,
-      overrideAccess: false,
-    })
-    if (docs[0]) {
-      await payload.update({ collection: 'monthly-notes', id: docs[0].id, data, user, overrideAccess: false })
-    } else {
-      await payload.create({ collection: 'monthly-notes', data: { month, ...data }, user, overrideAccess: false })
-    }
+    await upsertOne(session, 'monthly-notes', { month: { equals: month } }, data, { month, ...data })
     return { ok: true }
   } catch (error) {
     return fail(error)
@@ -224,7 +221,7 @@ export async function saveMonthNote(month: string, review: unknown[] | null): Pr
 /** Set any week's theme; for the current week it also becomes the active idea. */
 export async function setWeekTheme(monday: string, ideaId: number | null): Promise<ActionResult> {
   try {
-    if (!DAY_PATTERN.test(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
+    if (!isDay(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
     const session = await requireActionSession()
     const { payload, user } = session
     const id = ideaId == null ? null : Number(ideaId)

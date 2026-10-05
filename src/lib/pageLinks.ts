@@ -13,16 +13,31 @@ const listeners = new Set<() => void>()
 let queued = new Set<number>()
 let timer: ReturnType<typeof setTimeout> | null = null
 
+const MAX_ATTEMPTS = 3
+const attempts = new Map<number, number>()
+
 function flush() {
   const ids = [...queued]
   queued = new Set()
   timer = null
-  getPageLinks(ids).then((result) => {
-    if (!result.ok) return
-    const found = new Map((result.data ?? []).map((p) => [p.id, p]))
-    for (const id of ids) cache.set(id, found.get(id) ?? 'missing')
-    listeners.forEach((notify) => notify())
-  })
+  getPageLinks(ids)
+    .then((result) => {
+      if (!result.ok) throw new Error(result.error)
+      const found = new Map((result.data ?? []).map((p) => [p.id, p]))
+      for (const id of ids) cache.set(id, found.get(id) ?? 'missing')
+      listeners.forEach((notify) => notify())
+    })
+    .catch(() => {
+      // Offline or a failed request: try again a little later, then give up
+      // (shown as missing) rather than loading forever.
+      for (const id of ids) {
+        const tries = (attempts.get(id) ?? 0) + 1
+        attempts.set(id, tries)
+        if (tries >= MAX_ATTEMPTS) cache.set(id, 'missing')
+        else setTimeout(() => requestPageLink(id), 2000 * tries)
+      }
+      listeners.forEach((notify) => notify())
+    })
 }
 
 export function requestPageLink(id: number) {

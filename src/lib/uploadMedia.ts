@@ -23,7 +23,14 @@ const uploadMode = () =>
   }))
 
 /** Photos from a phone are huge: scale to ≤ 2400px and re-encode before upload. */
-async function shrinkImage(file: File): Promise<File> {
+type ShrinkOptions = {
+  /** Longest side in px (photos 2400; page icons 512). */
+  maxSide?: number
+  /** Keep transparency: anything but a JPEG becomes PNG (page icons). */
+  keepAlpha?: boolean
+}
+
+async function shrinkImage(file: File, { maxSide = MAX_SIDE, keepAlpha = false }: ShrinkOptions = {}): Promise<File> {
   if (!RESIZABLE.test(file.type) || typeof createImageBitmap !== 'function') return file
   let bitmap: ImageBitmap
   try {
@@ -31,8 +38,13 @@ async function shrinkImage(file: File): Promise<File> {
   } catch {
     return file
   }
-  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
-  if (scale === 1 && file.size < 1_500_000) return file
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
+  // WebP always goes (see below), however small.
+  const mustConvert = file.type === 'image/webp'
+  if (scale === 1 && file.size < 1_500_000 && !mustConvert) {
+    bitmap.close()
+    return file
+  }
   const canvas = document.createElement('canvas')
   canvas.width = Math.round(bitmap.width * scale)
   canvas.height = Math.round(bitmap.height * scale)
@@ -40,9 +52,9 @@ async function shrinkImage(file: File): Promise<File> {
   bitmap.close()
   // JPEG, not WebP: Payload treats WebP as possibly animated and re-encodes it,
   // which would leave the directly uploaded original orphaned in the bucket.
-  const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+  const type = file.type === 'image/png' || (keepAlpha && file.type !== 'image/jpeg') ? 'image/png' : 'image/jpeg'
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.85))
-  if (!blob || blob.size >= file.size) return file
+  if (!blob || (blob.size >= file.size && !mustConvert)) return file
   const ext = blob.type === 'image/png' ? 'png' : 'jpg'
   return new File([blob], file.name.replace(/\.[^.]+$/, '') + `.${ext}`, { type: blob.type })
 }
@@ -63,10 +75,10 @@ async function postMultipart(form: FormData): Promise<string> {
   return doc.url as string
 }
 
-export async function uploadMedia(original: File): Promise<string> {
+export async function uploadMedia(original: File, options?: ShrinkOptions): Promise<string> {
   const current = await uploadMode()
   if (current === 'off') throw new Error('還沒設定檔案儲存空間（Supabase Storage），暫時不能上傳')
-  const file = await shrinkImage(original)
+  const file = await shrinkImage(original, options)
   if (file.size > MAX_BYTES) throw new Error('檔案超過 50 MB')
 
   if (current === 'local') {

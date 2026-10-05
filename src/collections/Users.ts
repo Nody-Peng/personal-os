@@ -12,8 +12,15 @@ export const Users: CollectionConfig = {
   auth: {
     tokenExpiration: 60 * 60 * 24 * 30, // stay signed in on the phone for 30 days
     // The site is public: lock the account for 10 minutes after 5 wrong passwords.
+    // The /login form shows the same message for a wrong password and a locked
+    // account, so it doesn't reveal which email exists.
     maxLoginAttempts: 5,
     lockTime: 10 * 60 * 1000,
+    cookies: {
+      // HTTPS-only in production; plain http://localhost keeps working in development.
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+    },
   },
   access: {
     read: authenticated,

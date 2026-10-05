@@ -4,6 +4,7 @@ import { FileText, Stack } from '@phosphor-icons/react'
 import { UNTITLED, childrenOf, flattenTree, subtreeIds } from '@/lib/notes'
 import { Modal } from './Modal'
 import { useNotebook } from './NotebookShell'
+import { NoteIcon } from './NoteIcon'
 
 /** Pick a new parent for a page (works on phones, where dragging doesn't). */
 export function MoveDialog({ pageId, onClose }: { pageId: number; onClose: () => void }) {
@@ -32,7 +33,7 @@ export function MoveDialog({ pageId, onClose }: { pageId: number; onClose: () =>
         {targets.map(({ page: p, depth }) => (
           <li key={p.id}>
             <button type="button" className={row} style={{ paddingLeft: 12 + (depth + 1) * 14 }} disabled={page?.parent === p.id} onClick={() => choose(p.id)}>
-              <span className="grid size-4 place-items-center text-sm leading-none text-muted">{p.icon || <FileText size={16} />}</span>
+              <span className="grid size-4 place-items-center text-sm leading-none text-muted"><NoteIcon icon={p.icon} fallback={<FileText size={16} />} /></span>
               <span className="truncate">{p.title || UNTITLED}</span>
               {page?.parent === p.id && <span className="ml-auto shrink-0 text-xs text-muted">目前位置</span>}
             </button>

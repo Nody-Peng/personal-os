@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { saveDailyLog, type DailyLogPatch } from '@/app/(frontend)/actions'
 import type { PlanItem } from '@/lib/dayParts'
+import { markSaved, rememberLocal, useRenderStamp, withLocal } from '@/lib/noteCache'
 import type { ToeflSkill } from '@/lib/options'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 
@@ -46,12 +47,46 @@ type DayLogContext = {
 const Ctx = createContext<DayLogContext | null>(null)
 const TEXT_SAVE_DELAY = 800
 
+type Props = {
+  day: string
+  initial: DayLog
+  /** The server render's stamp: back/forward then keeps the latest taps (lib/noteCache.ts). */
+  renderedAt: number
+  children: React.ReactNode
+}
+
 /** One day's log: shared state plus a serial save queue for every section. */
-export function DayLogProvider({ day, initial, children }: { day: string; initial: DayLog; children: React.ReactNode }) {
-  const [log, setLog] = useState(initial)
-  const { enqueue, status, error, savedAt } = useSaveQueue()
+export function DayLogProvider({ day, initial, renderedAt, children }: Props) {
+  const key = `daylog:${day}`
+  const [log, setLogState] = useState(() => withLocal(key, initial, renderedAt))
+  useRenderStamp(key, renderedAt)
+  const { enqueue: enqueueSave, status, error, savedAt } = useSaveQueue()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingText = useRef<DailyLogPatch>({})
+  const inFlight = useRef(0)
+
+  const setLog = useCallback(
+    (update: (prev: DayLog) => DayLog) =>
+      setLogState((prev) => {
+        const next = update(prev)
+        rememberLocal(key, next)
+        return next
+      }),
+    [key],
+  )
+  // Saved once every queued save has landed and no typing is waiting.
+  const enqueue = useCallback(
+    (run: () => ReturnType<typeof saveDailyLog>) => {
+      inFlight.current += 1
+      enqueueSave(async () => {
+        const result = await run()
+        inFlight.current -= 1
+        if (result.ok && inFlight.current === 0 && !Object.keys(pendingText.current).length) markSaved(key)
+        return result
+      })
+    },
+    [enqueueSave, key],
+  )
 
   const commit = useCallback(
     (patch: Partial<DayLog>) => {
@@ -60,7 +95,7 @@ export function DayLogProvider({ day, initial, children }: { day: string; initia
       for (const key of Object.keys(patch)) delete pendingText.current[key as keyof DailyLogPatch]
       enqueue(() => saveDailyLog(day, patch))
     },
-    [day, enqueue],
+    [day, enqueue, setLog],
   )
 
   const flush = useCallback(() => {
@@ -78,7 +113,7 @@ export function DayLogProvider({ day, initial, children }: { day: string; initia
       if (timer.current) clearTimeout(timer.current)
       timer.current = setTimeout(flush, TEXT_SAVE_DELAY)
     },
-    [flush],
+    [flush, setLog],
   )
 
   useEffect(() => {

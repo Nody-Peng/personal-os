@@ -4,7 +4,8 @@ import type { ItemStatus, PageKind } from './options'
 
 export const MAX_NOTEBOOK_TITLE = 60
 export const MAX_PAGE_TITLE = 200
-export const MAX_ICON_LENGTH = 16
+/** An emoji, a `ph:<name>:<colour>` icon or an uploaded image's URL (lib/noteIcons.ts). */
+export const MAX_ICON_LENGTH = 300
 /** Trashed pages are purged for good after this many days. */
 export const TRASH_DAYS = 30
 
@@ -21,6 +22,7 @@ export type PageNode = {
   icon: string
   position: number
   kind: PageKind
+  favorite: boolean
 }
 
 export type NotebookItem = {
@@ -42,6 +44,7 @@ export function toPageNode(doc: {
   icon?: string | null
   position?: number | null
   kind?: string | null
+  favorite?: boolean | null
 }): PageNode {
   return {
     id: doc.id,
@@ -50,6 +53,7 @@ export function toPageNode(doc: {
     icon: doc.icon ?? '',
     position: doc.position ?? 0,
     kind: (doc.kind as PageKind | null) ?? 'page',
+    favorite: Boolean(doc.favorite),
   }
 }
 
