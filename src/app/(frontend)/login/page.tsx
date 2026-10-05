@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { logicalDay } from '@/lib/day'
 import { getSession, safeRedirect } from '@/lib/session'
+import { Logo } from '@/components/brand/Logo'
 import { LoginForm } from './LoginForm'
 
 export const metadata: Metadata = { title: '登入' }
@@ -18,7 +19,7 @@ export default async function LoginPage({ searchParams }: Props) {
     <main className="grid min-h-[100dvh] md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       {/* Cloth-bound cover, matching the journal books. */}
       <section
-        className="book-cover relative flex min-h-[38dvh] flex-col justify-between overflow-hidden rounded-none p-8 md:min-h-[100dvh] md:p-14"
+        className="book-cover cover-cloth relative flex min-h-[38dvh] flex-col justify-between overflow-hidden rounded-none p-8 md:min-h-[100dvh] md:p-14"
         style={{ '--cover': '#1d2840', transform: 'none' } as React.CSSProperties}
         aria-hidden
       >
@@ -35,6 +36,7 @@ export default async function LoginPage({ searchParams }: Props) {
 
       <section className="flex items-center justify-center px-6 py-10 md:px-12">
         <div className="rise w-full max-w-sm">
+          <Logo size={56} className="mb-6 rounded-[14px] shadow-[0_10px_24px_-12px_rgba(29,40,64,0.6)]" />
           <h1 className="text-3xl font-semibold tracking-tight text-ink-strong">歡迎回來</h1>
           <p className="mt-2 text-muted">登入後繼續寫今天的那一頁。</p>
           <div className="mt-8">

@@ -1,18 +1,24 @@
 import type { MetadataRoute } from 'next'
+import { BRAND_NAVY } from '@/components/brand/mark'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    id: '/',
     name: 'Personal OS',
     short_name: 'Personal OS',
-    description: '每日打卡、托福進度與想學清單',
+    description: '每天一頁的日記本：Important、習慣、托福進度與筆記本',
     start_url: '/',
+    scope: '/',
     display: 'standalone',
-    background_color: '#f7f6f3',
+    // Splash screen while the installed app starts: navy, like the journal cover.
+    background_color: BRAND_NAVY,
+    // Status bar matches the app's warm paper background.
     theme_color: '#f7f6f3',
     lang: 'zh-Hant-TW',
     icons: [
-      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
       { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [

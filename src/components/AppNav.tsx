@@ -2,6 +2,7 @@
 
 import { Books, ChartLineUp, GearSix, Lightbulb, SignOut, SunHorizon } from '@phosphor-icons/react'
 import Link from 'next/link'
+import { Logo } from '@/components/brand/Logo'
 import { usePathname, useRouter } from 'next/navigation'
 
 const ITEMS = [
@@ -31,7 +32,8 @@ export function AppNav() {
     <>
       <header className="sticky top-0 z-20 hidden border-b border-line bg-canvas/85 backdrop-blur md:block">
         <div className="mx-auto flex h-16 max-w-5xl items-center gap-8 px-6">
-          <Link href="/" className="font-mono text-sm font-semibold tracking-tight text-ink-strong">
+          <Link href="/" className="flex items-center gap-2.5 font-mono text-sm font-semibold tracking-tight text-ink-strong">
+            <Logo size={28} />
             Personal OS
           </Link>
           <nav className="flex flex-1 items-center gap-1">

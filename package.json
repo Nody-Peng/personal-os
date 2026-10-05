@@ -17,7 +17,8 @@
     "test:e2e": "cross-env NODE_OPTIONS=\"--no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts",
     "test:int": "cross-env NODE_OPTIONS=--no-deprecation vitest run --config ./vitest.config.mts",
     "db:local": "node scripts/local-db.mjs",
-    "seed:dev": "tsx scripts/seed-dev.ts"
+    "seed:dev": "tsx scripts/seed-dev.ts",
+    "icons": "tsx scripts/generate-icons.ts"
   },
   "dependencies": {
     "@blocknote/core": "^0.55.0",
