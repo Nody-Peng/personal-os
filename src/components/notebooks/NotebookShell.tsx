@@ -307,7 +307,10 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
           </div>
         )}
 
-        <div className="min-w-0 flex-1">{children}</div>
+        {/* Blocks can be box-selected from anywhere in the page's margins (editor/blockSelection.ts). */}
+        <div data-block-select-zone className="min-w-0 flex-1">
+          {children}
+        </div>
       </div>
 
       {toast && (

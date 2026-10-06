@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react'
 import { useResolvedTheme } from '@/lib/theme'
 import { reportNoteError, uploadMedia } from '@/lib/uploadMedia'
 import { NoteSideMenu } from './BlockMenu'
+import { blockSelection } from './blockSelection'
 import { scrollToBlock } from './blocks/TableOfContents'
 import { codeHighlighting } from './codeHighlighter'
 import { emojiItems } from './emojiItems'
@@ -53,7 +54,7 @@ export default function BlockEditorInner({ initial, placeholder, onChange, class
       ...editorDictionary,
       placeholders: { ...editorDictionary.placeholders, default: placeholder, emptyDocument: placeholder },
     },
-    extensions: [notionShortcuts, codeHighlighting],
+    extensions: [notionShortcuts, codeHighlighting, blockSelection()],
     dropCursor: multiColumnDropCursor,
     uploadFile: allowUploads ? upload : undefined,
     // A pasted web address becomes a link, then asks: keep, bookmark or embed?

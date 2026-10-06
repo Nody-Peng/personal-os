@@ -458,6 +458,54 @@
     background: transparent;
   }
 }
+
+/* Block selection (editor/blockSelection.ts): a tint over each selected block and
+   its children, the box drawn while dragging, and the hidden keyboard target. */
+.note-block-selected > .bn-block,
+.bn-block-column-list.note-block-selected {
+  position: relative;
+}
+.note-block-selected > .bn-block::after,
+.bn-block-column-list.note-block-selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  pointer-events: none;
+}
+.block-select-box {
+  position: fixed;
+  z-index: 30;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  pointer-events: none;
+}
+.block-selecting,
+.block-selecting * {
+  cursor: default;
+  user-select: none;
+}
+.block-selecting .bn-side-menu {
+  visibility: hidden;
+}
+.bn-container[data-block-selection] .bn-formatting-toolbar {
+  display: none;
+}
+.block-select-sink {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  outline: none;
+  pointer-events: none;
+  user-select: text;
+}
 .note-callout {
   display: flex;
   width: 100%;

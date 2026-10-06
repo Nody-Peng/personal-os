@@ -48,7 +48,7 @@ export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={page?.title || UNTITLED}>
       <button type="button" aria-label="關閉" onClick={onClose} className="modal-scrim absolute inset-0 bg-scrim" />
-      <aside className="peek-in absolute inset-y-0 right-0 flex w-full max-w-[680px] flex-col bg-surface shadow-[0_0_48px_rgba(17,17,17,0.14)] md:border-l md:border-line">
+      <aside data-block-select-zone className="peek-in absolute inset-y-0 right-0 flex w-full max-w-[680px] flex-col bg-surface shadow-[0_0_48px_rgba(17,17,17,0.14)] md:border-l md:border-line">
         {loadError && <p className="p-6 text-red-ink">{loadError}</p>}
         {!page && !loadError && <div className="m-6 h-40 animate-pulse rounded-lg bg-sunken" />}
         {page && <PeekBody key={page.id} page={page} onClose={onClose} />}
