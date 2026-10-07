@@ -19,6 +19,7 @@ import { PageLink } from './blocks/PageLink'
 import { TableOfContents } from './blocks/TableOfContents'
 import { codeLanguageFor } from './codeLanguages'
 import type { NoteEditorContext } from './NoteContext'
+import { toggleEnter } from './toggleEnter'
 
 export const editorSchema = withMultiColumn(
   BlockNoteSchema.create({
@@ -49,10 +50,14 @@ export const multiColumnDictionary = {
  *   "> "          toggle list (a quote is `" `); in a heading it makes the heading collapsible
  *   "# " … "### " inside a toggle list keeps it collapsible as a heading
  *   "``` " / "```python " code block (Bash when no language is given)
+ * and Notion's Enter in a toggle (`toggleEnter`): its children stay with it.
  */
 export const notionShortcuts = createExtension({
   key: 'notion-shortcuts',
   runsBefore: ['quote-block-shortcuts', 'heading-shortcuts', 'toggle-list-item-shortcuts', 'code-block-keyboard-shortcuts'],
+  keyboardShortcuts: {
+    Enter: ({ editor }) => toggleEnter(editor),
+  },
   inputRules: [
     {
       find: /^```(.*?)\s$/,

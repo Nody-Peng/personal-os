@@ -15,6 +15,20 @@ const MAX_BYTES = 1_000_000
 const TIMEOUT_MS = 6000
 const MAX_REDIRECTS = 4
 
+// Sites hand page details to link-preview robots far more often than to
+// unknown clients (or to browsers, which get bot checks), and not all to the
+// same ones: Slack's unfurler gets through most often, Facebook's to others.
+const AGENTS = ['Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)', 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)']
+// Answers that another robot may get past.
+const RETRY_STATUS = new Set([401, 403, 406, 429, 503])
+const BOT_CHECK = /<title>\s*(just a moment|attention required|access denied)/i
+
+class HttpError extends Error {
+  constructor(readonly status: number) {
+    super(RETRY_STATUS.has(status) ? '這個網站不讓別人讀取預覽' : status === 404 || status === 410 ? '找不到這個網頁' : `網站回應 ${status}`)
+  }
+}
+
 /** dns.lookup that refuses names pointing (even partly) at private addresses. */
 const publicLookup: net.LookupFunction = (hostname, options, callback) => {
   dns.lookup(hostname, { ...options, all: true }, (error, addresses) => {
@@ -39,9 +53,9 @@ function checkUrl(raw: string): URL {
   return url
 }
 
-type Page = { url: string; body: string }
+type Page = { url: string; body: string; headers: http.IncomingHttpHeaders }
 
-function get(url: URL, redirects: number): Promise<Page> {
+function get(url: URL, redirects: number, agent: string, headersOnly = false): Promise<Page> {
   return new Promise((resolve, reject) => {
     const client = url.protocol === 'https:' ? https : http
     const req = client.request(
@@ -51,7 +65,7 @@ function get(url: URL, redirects: number): Promise<Page> {
         lookup: publicLookup,
         timeout: TIMEOUT_MS,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; PersonalOS-LinkPreview/1.0)',
+          'User-Agent': agent,
           Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5',
           'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
         },
@@ -62,7 +76,7 @@ function get(url: URL, redirects: number): Promise<Page> {
           res.resume()
           if (redirects >= MAX_REDIRECTS) return reject(new Error('轉址太多次'))
           try {
-            resolve(get(checkUrl(new URL(res.headers.location, url).href), redirects + 1))
+            resolve(get(checkUrl(new URL(res.headers.location, url).href), redirects + 1, agent, headersOnly))
           } catch (error) {
             reject(error)
           }
@@ -70,12 +84,12 @@ function get(url: URL, redirects: number): Promise<Page> {
         }
         if (status >= 400) {
           res.resume()
-          return reject(new Error(`網站回應 ${status}`))
+          return reject(new HttpError(status))
         }
         const type = String(res.headers['content-type'] ?? '')
-        if (type && !/html|xml/i.test(type)) {
+        if (headersOnly || (type && !/html|xml/i.test(type))) {
           res.resume()
-          return resolve({ url: url.href, body: '' })
+          return resolve({ url: url.href, body: '', headers: res.headers })
         }
         const charset = type.match(/charset=([\w-]+)/i)?.[1]
         const chunks: Buffer[] = []
@@ -95,7 +109,7 @@ function get(url: URL, redirects: number): Promise<Page> {
           } catch {
             body = buffer.toString('utf8')
           }
-          resolve({ url: url.href, body })
+          resolve({ url: url.href, body, headers: res.headers })
         }
         res.on('end', finish)
         res.on('close', finish)
@@ -109,6 +123,38 @@ function get(url: URL, redirects: number): Promise<Page> {
 }
 
 export async function fetchLinkMeta(raw: string): Promise<LinkMeta> {
-  const page = await get(checkUrl(raw), 0)
-  return parseLinkMeta(page.body, page.url)
+  const url = checkUrl(raw)
+  let refused: Error = new HttpError(403)
+  for (const agent of AGENTS) {
+    try {
+      const page = await get(url, 0, agent)
+      if (!BOT_CHECK.test(page.body.slice(0, 20_000))) return parseLinkMeta(page.body, page.url)
+    } catch (error) {
+      if (!(error instanceof HttpError) || !RETRY_STATUS.has(error.status)) throw error
+      refused = error
+    }
+  }
+  throw refused
+}
+
+/**
+ * Whether a page lets other sites show it in a frame (X-Frame-Options, CSP
+ * frame-ancestors), for the embed block; null when the site won't say.
+ */
+export async function fetchFramePolicy(raw: string): Promise<boolean | null> {
+  let page: Page
+  try {
+    page = await get(checkUrl(raw), 0, AGENTS[0], true)
+  } catch (error) {
+    if (error instanceof HttpError) return null
+    throw error
+  }
+  const options = String(page.headers['x-frame-options'] ?? '').toLowerCase()
+  if (/deny|sameorigin|allow-from/.test(options)) return false
+  const ancestors = String(page.headers['content-security-policy'] ?? '')
+    .toLowerCase()
+    .match(/frame-ancestors([^;,]*)/)?.[1]
+    .trim()
+    .split(/\s+/)
+  return !ancestors || ancestors.some((source) => source === '*' || source === 'https:')
 }

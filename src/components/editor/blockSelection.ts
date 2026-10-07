@@ -11,7 +11,7 @@
 
 import { createExtension, getNodeById, type ExtensionOptions } from '@blocknote/core'
 import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from 'prosemirror-model'
-import { Plugin, PluginKey, Selection } from 'prosemirror-state'
+import { Plugin, PluginKey, Selection, TextSelection } from 'prosemirror-state'
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view'
 
 type Mapping = Parameters<Selection['map']>[1]
@@ -83,6 +83,9 @@ function rangeOfIds(doc: PMNode, firstId: string, lastId: string): BlockSelectio
   return blockRangeBetween(doc, first.posBeforeNode, last.posBeforeNode + last.node.nodeSize)
 }
 
+/** The id of the block a `.bn-block-content` belongs to (custom blocks sit in an extra `.react-renderer`). */
+const blockIdOf = (content: Element) => content.closest('[data-node-type="blockContainer"]')?.getAttribute('data-id') ?? null
+
 /** The id of the block that holds a position. */
 function blockIdAt($pos: ResolvedPos): string | null {
   for (let d = $pos.depth; d > 0; d--) {
@@ -125,6 +128,33 @@ function dragPreview(view: EditorView, sel: BlockSelection): HTMLElement {
   document.body.appendChild(preview)
   document.addEventListener('dragend', () => preview.remove(), { once: true, capture: true })
   return preview
+}
+
+/**
+ * A click below the last block of a toggle's children (the strip styles.css
+ * leaves when that block isn't a line of text) or of a column adds an empty
+ * line at the end there, or goes to the empty line already there.
+ */
+function lineBelow(view: EditorView, target: Element, y: number): boolean {
+  if (!target.matches('.bn-block-group, .bn-block-column') || target.parentElement === view.dom) return false
+  const last = target.lastElementChild
+  if (!last || y <= last.getBoundingClientRect().bottom) return false
+  const inside = view.posAtDOM(target, 0)
+  const list = view.state.doc.resolve(inside).parent
+  if (!isBlockList(list) || !list.lastChild) return false
+  const end = inside + list.content.size
+  const lastBlock = list.lastChild
+  const tr = view.state.tr
+  let caret = end + 2
+  if (lastBlock.childCount === 1 && lastBlock.firstChild!.type.name === 'paragraph' && lastBlock.firstChild!.content.size === 0) {
+    caret = end - lastBlock.nodeSize + 2
+  } else {
+    const { schema } = view.state
+    tr.insert(end, schema.nodes.blockContainer.createAndFill(null, schema.nodes.paragraph.create())!)
+  }
+  view.dispatch(tr.setSelection(TextSelection.create(tr.doc, caret)).scrollIntoView())
+  view.focus()
+  return true
 }
 
 export const blockSelection = createExtension(({ editor }: ExtensionOptions<undefined>) => {
@@ -224,7 +254,8 @@ export const blockSelection = createExtension(({ editor }: ExtensionOptions<unde
     const contents = [...view().dom.querySelectorAll<HTMLElement>('.bn-block-content')].filter((el) => el.getClientRects().length > 0 && !edge.contains(el))
     const side = dir < 0 ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING
     const near = contents.filter((el) => edge.compareDocumentPosition(el) & side)
-    const id = (dir < 0 ? near.at(-1) : near[0])?.parentElement?.getAttribute('data-id')
+    const content = dir < 0 ? near.at(-1) : near[0]
+    const id = content ? blockIdOf(content) : null
     const next = id ? rangeOfIds(doc, id, id) : null
     if (next) select(next)
   }
@@ -295,7 +326,7 @@ export const blockSelection = createExtension(({ editor }: ExtensionOptions<unde
     for (const content of view().dom.querySelectorAll<HTMLElement>('.bn-block-content')) {
       const r = content.getBoundingClientRect()
       if (!r.height || r.bottom < rect.top || r.top > rect.bottom || r.right < rect.left || r.left > rect.right) continue
-      const id = content.parentElement?.getAttribute('data-id')
+      const id = blockIdOf(content)
       if (!id) continue
       first ??= id
       last = id
@@ -373,7 +404,9 @@ export const blockSelection = createExtension(({ editor }: ExtensionOptions<unde
       if (dragged) update()
       stop()
       if (dragged) return focusSink()
-      // A plain click: in the editor's own margin it still places the caret, as before.
+      // A plain click: under a toggle's or column's last block it adds a line there;
+      // elsewhere in the editor's own margin it still places the caret, as before.
+      if (insideText && down.target instanceof Element && lineBelow(pm, down.target, e.clientY)) return
       if (insideText) {
         const at = pm.posAtCoords({ left: e.clientX, top: e.clientY })
         if (at) pm.dispatch(pm.state.tr.setSelection(Selection.near(pm.state.doc.resolve(at.pos))))

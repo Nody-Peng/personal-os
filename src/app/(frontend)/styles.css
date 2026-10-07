@@ -412,6 +412,47 @@
 .journal-editor .bn-inline-content:has(> .ProseMirror-trailingBreak:only-child)::before {
   color: var(--color-faint);
 }
+/* Links in the text, Notion-style: muted with a soft underline (the CSS reset
+   would otherwise draw them as plain text). */
+.journal-editor .bn-inline-content a {
+  color: var(--color-muted);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    text-decoration-color 150ms ease;
+}
+.journal-editor .bn-inline-content a:hover {
+  color: var(--color-ink-strong);
+  text-decoration-color: currentColor;
+}
+/* An open toggle whose last block isn't a line of text (a page, picture, board…)
+   keeps a strip under it; clicking it adds a line inside the toggle (editor/blockSelection.ts). */
+.journal-editor
+  .bn-block:has(> .bn-block-content > div > .bn-toggle-wrapper[data-show-children='true'])
+  > .bn-block-group:not(
+    :has(
+      > .bn-block-outer:last-child
+        > .bn-block
+        > .bn-block-content:is(
+          [data-content-type='paragraph'],
+          [data-content-type='heading'],
+          [data-content-type='bulletListItem'],
+          [data-content-type='numberedListItem'],
+          [data-content-type='checkListItem'],
+          [data-content-type='toggleListItem'],
+          [data-content-type='quote']
+        )
+    )
+  )::after {
+  content: '';
+  display: block;
+  height: 0.875rem;
+  cursor: text;
+}
 @media (min-width: 768px) {
   .journal-editor .bn-editor {
     padding-inline: 44px 8px;

@@ -1,13 +1,27 @@
 'use client'
 
 import { createReactBlockSpec } from '@blocknote/react'
-import { ArrowSquareOut, FrameCorners } from '@phosphor-icons/react'
-import { useRef, useState } from 'react'
-import { toEmbed } from '@/lib/embeds'
+import { ArrowSquareOut, BookmarkSimple, FrameCorners } from '@phosphor-icons/react'
+import { useEffect, useRef, useState } from 'react'
+import { getFramePolicy } from '@/app/(frontend)/link-actions'
+import { isKnownEmbed, toEmbed } from '@/lib/embeds'
+import type { NoteEditor } from '../schema'
 import { UrlPrompt } from './UrlPrompt'
 
 const MIN_HEIGHT = 120
 const MAX_HEIGHT = 1200
+
+// Most sites refuse to be framed and the browser then draws an empty box, so
+// any page that isn't a known service is asked first (once per address).
+const framePolicies = new Map<string, Promise<boolean | null>>()
+function framePolicy(url: string): Promise<boolean | null> {
+  let request = framePolicies.get(url)
+  if (!request) {
+    request = getFramePolicy(url).then((r) => (r.ok ? (r.data ?? null) : null))
+    framePolicies.set(url, request)
+  }
+  return request
+}
 
 /**
  * Notion's embed: a YouTube video, a Google map or doc, a Figma file… in a
@@ -31,7 +45,16 @@ export const EmbedBlock = createReactBlockSpec(
           />
         )
       }
-      return <EmbedFrame url={url} height={height} editable={editor.isEditable} onResize={(h) => editor.updateBlock(block, { props: { height: h } })} />
+      return (
+        <EmbedFrame
+          url={url}
+          height={height}
+          editable={editor.isEditable}
+          onResize={(h) => editor.updateBlock(block, { props: { height: h } })}
+          // A sibling block type: this block's own editor type only knows `embed`.
+          onBookmark={() => (editor as unknown as NoteEditor).updateBlock(block.id, { type: 'bookmark', props: { url } })}
+        />
+      )
     },
     toExternalHTML: function EmbedHTML({ block }) {
       return (
@@ -43,14 +66,60 @@ export const EmbedBlock = createReactBlockSpec(
   },
 )
 
-function EmbedFrame({ url, height, editable, onResize }: { url: string; height: number; editable: boolean; onResize: (height: number) => void }) {
+function EmbedFrame({
+  url,
+  height,
+  editable,
+  onResize,
+  onBookmark,
+}: {
+  url: string
+  height: number
+  editable: boolean
+  onResize: (height: number) => void
+  onBookmark: () => void
+}) {
   const embed = toEmbed(url)
+  const known = isKnownEmbed(url)
   const box = useRef<HTMLDivElement>(null)
   const [dragHeight, setDragHeight] = useState<number | null>(null)
+  // undefined while asking; null when the site won't say (then try the frame anyway).
+  const [allowed, setAllowed] = useState<boolean | null | undefined>(known ? true : undefined)
+  useEffect(() => {
+    if (known) return
+    let alive = true
+    void framePolicy(url).then((policy) => alive && setAllowed(policy))
+    return () => {
+      alive = false
+    }
+  }, [url, known])
   if (!embed) return <div className="note-pagelink text-muted">這個網址不能嵌入</div>
 
   const fixed = dragHeight ?? (height || null)
   const style = fixed ? { height: fixed } : embed.ratio ? { aspectRatio: `${1 / embed.ratio}` } : { height: embed.height }
+
+  if (allowed === undefined) {
+    return <div className="note-embed h-24 w-full animate-pulse rounded-lg border border-line bg-sunken" contentEditable={false} />
+  }
+  if (allowed === false) {
+    return (
+      <div className="note-embed flex w-full flex-col items-start gap-2 rounded-lg border border-line px-4 py-3 text-sm" contentEditable={false}>
+        <span className="text-ink">{embed.provider} 不允許被嵌入到其他網頁</span>
+        <span className="flex flex-wrap gap-1">
+          {editable && (
+            <button type="button" onClick={onBookmark} className="flex items-center gap-1 rounded-md px-2 py-1 text-accent transition-colors hover:bg-accent-soft">
+              <BookmarkSimple size={14} />
+              改成網頁書籤
+            </button>
+          )}
+          <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-md px-2 py-1 text-muted transition-colors hover:bg-sunken hover:text-ink-strong">
+            開啟原網頁
+            <ArrowSquareOut size={14} />
+          </a>
+        </span>
+      </div>
+    )
+  }
 
   return (
     <figure className="note-embed w-full" contentEditable={false}>
