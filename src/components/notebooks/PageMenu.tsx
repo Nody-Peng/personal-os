@@ -4,6 +4,7 @@ import {
   ArrowsDownUp,
   ArrowsInLineVertical,
   ArrowsOutLineVertical,
+  ClockCounterClockwise,
   Copy,
   DotsThree,
   FileHtml,
@@ -16,7 +17,7 @@ import {
 } from '@phosphor-icons/react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { PAGE_FONTS, type PageFont } from '@/lib/options'
+import { PAGE_FONTS, TEMPLATE_KINDS, type PageFont, type TemplateKind } from '@/lib/options'
 
 export type PageStyle = {
   font: PageFont
@@ -42,6 +43,10 @@ type Props = {
   /** Only for pages with an editor (not boards). */
   onToggles?: (open: boolean) => void
   onTrash: () => void
+  /** Only for pages with an editor: earlier versions. */
+  onHistory?: () => void
+  /** Only for pages with an editor: what this page is a template for (null: none). */
+  template?: { value: TemplateKind | null; onChange: (value: TemplateKind | null) => void }
 }
 
 const WIDTH = 272
@@ -107,6 +112,7 @@ export function PageMenu(props: Props) {
     ...(props.onMove
       ? [{ label: '移動到…', icon: ArrowsDownUp, onSelect: run(props.onMove) }]
       : []),
+    ...(props.onHistory ? [{ label: '版本紀錄', icon: ClockCounterClockwise, onSelect: run(props.onHistory) }] : []),
   ]
   const exports: Action[] = [
     { label: '匯出 Markdown', icon: FileMd, onSelect: run(() => props.onExport('markdown')) },
@@ -195,6 +201,29 @@ export function PageMenu(props: Props) {
               checked={style.locked}
               onChange={(v) => onStyle({ locked: v })}
             />
+            {props.template && (
+              <>
+                <Divider />
+                <p className="px-2.5 pt-1 pb-1.5 text-xs text-muted">用作範本（空白的頁面、日記或週回顧可以一鍵套用）</p>
+                <div role="radiogroup" aria-label="用作範本" className="grid grid-cols-4 gap-1 px-1 pb-1">
+                  {[{ label: '不用', value: null }, ...TEMPLATE_KINDS.map((k) => ({ label: k.short, value: k.value }))].map((option) => {
+                    const on = props.template!.value === option.value
+                    return (
+                      <button
+                        key={option.label}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => props.template!.onChange(option.value)}
+                        className={`rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-sunken ${on ? 'bg-accent-soft font-medium text-accent' : 'text-ink'}`}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
             <Divider />
             {actions.map((a) => (
               <Row key={a.label} action={a} />

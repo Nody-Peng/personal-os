@@ -72,6 +72,14 @@ export type CoverPattern = (typeof COVER_PATTERNS)[number]['value']
 export const selectOptions = (list: readonly { label: string; value: string }[]) =>
   list.map(({ label, value }) => ({ label, value }))
 
+/** What a notebook page is a template for (set from its ••• menu): new pages, each day's note, each week's review. */
+export const TEMPLATE_KINDS = [
+  { label: '頁面範本', short: '頁面', value: 'page' },
+  { label: '每日日記範本', short: '日記', value: 'day' },
+  { label: '週回顧範本', short: '週回顧', value: 'week' },
+] as const
+export type TemplateKind = (typeof TEMPLATE_KINDS)[number]['value']
+
 /** Kinds of notebook pages: a plain page, a board (todo database) and its items. */
 export const PAGE_KINDS = [
   { label: '頁面', value: 'page' },

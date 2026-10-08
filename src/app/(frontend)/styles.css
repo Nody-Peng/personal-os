@@ -34,6 +34,9 @@
   --color-on-ink: var(--color-surface);
   /* Behind dialogs and side panels. */
   --color-scrim: rgb(17 17 17 / 0.22);
+  /* Behind a picture shown full screen (editor/ImageLightbox), dark in both themes. */
+  --color-viewer: rgb(17 17 17 / 0.9);
+  --color-on-viewer: #f2f1ed;
 
   /* Page icon colours (lib/noteIcons.ts), Notion's palette. */
   --color-icon-default: #37352f;
@@ -84,6 +87,7 @@
   --color-red-ink: #f1918d;
 
   --color-scrim: rgb(0 0 0 / 0.55);
+  --color-viewer: rgb(0 0 0 / 0.92);
 
   --color-icon-default: #d4d4d4;
   --color-icon-gray: #9b9b9b;

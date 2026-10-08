@@ -34,5 +34,16 @@ export const Media: CollectionConfig = {
       'application/vnd.ms-powerpoint',
     ],
   },
-  fields: [{ name: 'alt', label: '說明', type: 'text' }],
+  fields: [
+    { name: 'alt', label: '說明', type: 'text' },
+    // Set by the daily cleanup (lib/dailyJobs.ts) while nothing uses the file; it is
+    // deleted once it has stayed unused for a while, cleared if it is used again.
+    {
+      name: 'unusedSince',
+      label: '沒被使用的起始時間',
+      type: 'date',
+      index: true,
+      admin: { readOnly: true, position: 'sidebar', date: { pickerAppearance: 'dayAndTime' } },
+    },
+  ],
 }

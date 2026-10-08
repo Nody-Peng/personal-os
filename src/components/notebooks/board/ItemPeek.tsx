@@ -194,6 +194,7 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
               className="note-editor note-editor-compact"
               placeholder="寫下細節，或按 / 插入區塊…"
               allowUploads
+              templateKind="page"
               onStatus={(s, err) => setBody({ status: s, error: err })}
             />
           </NoteContext.Provider>

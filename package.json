@@ -26,6 +26,7 @@
     "@blocknote/mantine": "^0.55.0",
     "@blocknote/react": "^0.55.0",
     "@blocknote/xl-multi-column": "^0.55.0",
+    "@jsquash/oxipng": "^2.3.0",
     "@mantine/core": "^8.3.18",
     "@mantine/hooks": "^8.3.18",
     "@payloadcms/db-postgres": "3.90.2",

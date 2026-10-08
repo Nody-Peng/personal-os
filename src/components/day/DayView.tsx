@@ -156,6 +156,8 @@ export async function DayView({ session, day, today }: { session: Session; day: 
             initial={Array.isArray(log?.note) ? log.note : null}
             renderedAt={renderedAt}
             placeholder="今天過得怎麼樣？學到什麼、卡在哪裡、明天想怎麼調整…"
+            allowUploads
+            templateKind="day"
           />
         </section>
 

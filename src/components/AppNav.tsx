@@ -1,10 +1,11 @@
 'use client'
 
-import { Books, ChartLineUp, DotsThreeCircle, GearSix, Lightbulb, SignOut, SunHorizon, X } from '@phosphor-icons/react'
+import { Books, ChartLineUp, DotsThreeCircle, GearSix, Lightbulb, MagnifyingGlass, SignOut, SunHorizon, X } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Logo } from '@/components/brand/Logo'
+import { openSearch } from '@/components/search/GlobalSearch'
 import { ThemeCycleButton, ThemeSwitch } from '@/components/ThemeSwitch'
 
 const ITEMS = [
@@ -67,6 +68,15 @@ export function AppNav() {
             })}
           </nav>
           <div className="flex items-center gap-5">
+            <button
+              type="button"
+              onClick={openSearch}
+              className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink-strong"
+              title="搜尋筆記本和日記（Ctrl K）"
+            >
+              <MagnifyingGlass size={18} />
+              搜尋
+            </button>
             <ThemeCycleButton className="size-8 text-muted" />
             <Link href="/admin" className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink-strong">
               <GearSix size={18} />
@@ -131,6 +141,17 @@ export function AppNav() {
             <p className="label mb-2">外觀</p>
             <ThemeSwitch className="w-full" />
             <div className="mt-5 grid gap-1 border-t border-line pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreAt(null)
+                  openSearch()
+                }}
+                className="flex h-11 items-center gap-3 rounded-lg px-2 text-left text-ink hover:bg-sunken"
+              >
+                <MagnifyingGlass size={20} className="text-muted" />
+                搜尋筆記本和日記
+              </button>
               <Link href="/admin" className="flex h-11 items-center gap-3 rounded-lg px-2 text-ink hover:bg-sunken">
                 <GearSix size={20} className="text-muted" />
                 後台

@@ -59,6 +59,36 @@ async function shrinkImage(file: File, { maxSide = MAX_SIDE, keepAlpha = false }
   return new File([blob], file.name.replace(/\.[^.]+$/, '') + `.${ext}`, { type: blob.type })
 }
 
+/**
+ * Screenshots (PNG) keep every pixel: oxipng re-compresses them losslessly in a
+ * worker (often a third smaller). Anything else, or any failure, passes through.
+ */
+async function optimisePng(file: File): Promise<File> {
+  if (file.type !== 'image/png' || typeof Worker === 'undefined') return file
+  let worker: Worker | null = null
+  try {
+    worker = new Worker(new URL('./pngOptimizer.worker.ts', import.meta.url), { type: 'module' })
+    const input = await file.arrayBuffer()
+    const output = await new Promise<ArrayBuffer | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), 30_000)
+      worker!.onmessage = (event: MessageEvent<ArrayBuffer | null>) => {
+        clearTimeout(timer)
+        resolve(event.data)
+      }
+      worker!.onerror = () => {
+        clearTimeout(timer)
+        resolve(null)
+      }
+      worker!.postMessage(input, [input])
+    })
+    return output && output.byteLength < file.size ? new File([output], file.name, { type: 'image/png' }) : file
+  } catch {
+    return file
+  } finally {
+    worker?.terminate()
+  }
+}
+
 async function errorOf(res: Response): Promise<string> {
   try {
     const body = await res.json()
@@ -78,7 +108,10 @@ async function postMultipart(form: FormData): Promise<string> {
 export async function uploadMedia(original: File, options?: ShrinkOptions): Promise<string> {
   const current = await uploadMode()
   if (current === 'off') throw new Error('還沒設定檔案儲存空間（Supabase Storage），暫時不能上傳')
-  const file = await shrinkImage(original, options)
+  // Photos are scaled and re-encoded; screenshots keep their size and are only
+  // compressed losslessly (page icons are scaled first, then compressed too).
+  const scaled = original.type === 'image/png' && !options?.maxSide ? original : await shrinkImage(original, options)
+  const file = await optimisePng(scaled)
   if (file.size > MAX_BYTES) throw new Error('檔案超過 50 MB')
 
   if (current === 'local') {

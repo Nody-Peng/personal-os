@@ -4,6 +4,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createBoard, createPage, movePage, trashPage } from '@/app/(frontend)/notebook-actions'
 import type { NoteEditorContext } from '@/components/editor/NoteContext'
+import { Toast, useToastTimeout, type ToastMessage } from '@/components/Toast'
 import { dropItems } from '@/lib/boardStore'
 import { rememberTree, treeWithEdits, useTreeStamp } from '@/lib/noteCache'
 import { closePanel, openPanel } from '@/lib/panelHistory'
@@ -145,7 +146,7 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
   const [drawerAt, setDrawerAt] = useState<string | null>(null)
   const drawer = drawerAt === pathname
   const [dialog, setDialog] = useState<'search' | 'trash' | 'settings' | { move: number } | null>(null)
-  const [toast, setToast] = useState<{ text: string; tone: 'error' | 'info' } | null>(null)
+  const [toast, setToast] = useState<ToastMessage | null>(null)
   const setError = useCallback((text: string | null) => setToast(text ? { text, tone: 'error' } : null), [])
   const say = useCallback((text: string) => setToast({ text, tone: 'info' }), [])
   const pagesRef = useRef(pages)
@@ -178,11 +179,7 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
     if (parents.some((id) => !open.has(id))) writeExpanded(initialNotebook.id, new Set([...open, ...parents]))
   }, [currentId, initialNotebook.id])
 
-  useEffect(() => {
-    if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), toast.tone === 'error' ? 5000 : 2200)
-    return () => window.clearTimeout(timer)
-  }, [toast])
+  useToastTimeout(toast, useCallback(() => setToast(null), []))
 
   useSearchShortcut(() => setDialog('search'))
 
@@ -313,17 +310,7 @@ export function NotebookShell({ notebook: initialNotebook, pages: serverPages, r
         </div>
       </div>
 
-      {toast && (
-        <p
-          key={toast.text}
-          role={toast.tone === 'error' ? 'alert' : 'status'}
-          className={`toast-in fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border px-4 py-2 text-sm shadow-[0_12px_32px_-16px_rgba(17,17,17,0.3)] ${
-            toast.tone === 'error' ? 'border-red-ink/20 bg-red-soft text-red-ink' : 'border-line bg-ink-strong text-canvas'
-          }`}
-        >
-          {toast.text}
-        </p>
-      )}
+      {toast && <Toast key={toast.text} {...toast} />}
 
       {dialog === 'search' && <NoteSearch onClose={() => setDialog(null)} />}
       {dialog === 'trash' && <TrashDialog onClose={() => setDialog(null)} />}

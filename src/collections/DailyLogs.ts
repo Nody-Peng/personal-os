@@ -1,7 +1,9 @@
 import type { CollectionConfig } from 'payload'
 import { authenticated } from '@/access/authenticated'
 import { dayField } from '@/fields/dayField'
+import { searchTextField, searchTextHook } from '@/fields/searchText'
 import { TOEFL_SKILLS } from '@/lib/options'
+import { dayLogText } from '@/lib/searchText'
 
 export const DailyLogs: CollectionConfig = {
   slug: 'daily-logs',
@@ -46,5 +48,9 @@ export const DailyLogs: CollectionConfig = {
       type: 'json',
       admin: { description: 'Notion 式編輯器的區塊資料（在前台編輯）' },
     },
+    searchTextField,
   ],
+  hooks: {
+    beforeChange: [searchTextHook(['note', 'morningItems', 'noonItems', 'eveningItems'], dayLogText)],
+  },
 }

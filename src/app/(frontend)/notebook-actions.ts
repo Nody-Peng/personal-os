@@ -1,8 +1,9 @@
 'use server'
 
+import { sql, type PostgresAdapter } from '@payloadcms/db-postgres'
 import { revalidatePath } from 'next/cache'
-import type { Where } from 'payload'
 import { clampInt, cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
+import { blocksToText, countWords, isBlankDocument } from '@/lib/blocks'
 import { isDay } from '@/lib/day'
 import {
   MAX_ICON_LENGTH,
@@ -17,7 +18,6 @@ import {
   parentCandidates,
   toBoardItem,
   type BoardItem,
-  snippetAround,
   subtreeIds,
   toPageNode,
   type NotebookItem,
@@ -25,7 +25,18 @@ import {
 } from '@/lib/notes'
 import { toNotebookItem } from '@/lib/notebookQueries'
 import { cleanNoteIcon } from '@/lib/noteIcons'
-import { COVER_COLORS, COVER_PATTERNS, ITEM_STATUSES, PAGE_FONTS, type CoverColor, type CoverPattern, type ItemStatus, type PageFont } from '@/lib/options'
+import {
+  COVER_COLORS,
+  COVER_PATTERNS,
+  ITEM_STATUSES,
+  PAGE_FONTS,
+  TEMPLATE_KINDS,
+  type CoverColor,
+  type CoverPattern,
+  type ItemStatus,
+  type PageFont,
+  type TemplateKind,
+} from '@/lib/options'
 import { requireActionSession, type Session } from '@/lib/session'
 
 // The shelf shows page counts; the notebook view keeps its own tree state.
@@ -281,9 +292,39 @@ export type PagePatch = Partial<{
   fullWidth: boolean
   locked: boolean
   favorite: boolean
+  /** null = not a template. */
+  templateFor: TemplateKind | null
 }>
 
 const PAGE_FONT_VALUES = new Set<string>(PAGE_FONTS.map((f) => f.value))
+const TEMPLATE_KIND_VALUES = new Set<string>(TEMPLATE_KINDS.map((k) => k.value))
+
+// Version history (PageSnapshots): saving a page keeps the content it replaces
+// when the page's newest snapshot is older than this, and this many per page.
+const SNAPSHOT_EVERY = 10 * 60_000
+const SNAPSHOTS_KEPT = 50
+
+/** Keeps the page's current title and content as a snapshot (`force`: whatever the newest one's age). */
+async function keepSnapshot({ payload, user }: Session, pageId: number, force = false) {
+  const newest = await payload.find({
+    collection: 'page-snapshots',
+    where: { page: { equals: pageId } },
+    sort: '-createdAt',
+    limit: SNAPSHOTS_KEPT + 20,
+    depth: 0,
+    select: { createdAt: true },
+    user,
+    overrideAccess: false,
+  })
+  if (!force && newest.docs[0] && Date.now() - Date.parse(newest.docs[0].createdAt) < SNAPSHOT_EVERY) return
+  const page = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, select: { title: true, content: true }, user, overrideAccess: false })
+  if (isBlankDocument(page.content)) return
+  await payload.create({ collection: 'page-snapshots', data: { page: pageId, title: page.title ?? '', content: page.content }, user, overrideAccess: false })
+  const surplus = newest.docs.slice(SNAPSHOTS_KEPT - 1).map((s) => s.id)
+  if (surplus.length) {
+    await payload.delete({ collection: 'page-snapshots', where: { id: { in: surplus } }, user, overrideAccess: false })
+  }
+}
 
 /** Covers are our own uploads only (served, with the login check, by Payload). */
 function cleanCover(value: unknown): string {
@@ -295,7 +336,8 @@ function cleanCover(value: unknown): string {
 
 export async function updatePage(id: number, patch: PagePatch): Promise<ActionResult> {
   try {
-    const { payload, user } = await requireActionSession()
+    const session = await requireActionSession()
+    const { payload, user } = session
     const data: Omit<PagePatch, 'font'> & { font?: PageFont; editedAt?: string } = {}
     if ('title' in patch) data.title = cleanPageTitle(patch.title)
     if ('icon' in patch) data.icon = cleanIcon(patch.icon)
@@ -309,8 +351,13 @@ export async function updatePage(id: number, patch: PagePatch): Promise<ActionRe
     for (const key of ['smallText', 'fullWidth', 'locked', 'favorite'] as const) {
       if (key in patch) data[key] = patch[key] === true
     }
+    if ('templateFor' in patch) {
+      if (patch.templateFor != null && !TEMPLATE_KIND_VALUES.has(String(patch.templateFor))) throw new Error('範本類型錯誤')
+      data.templateFor = patch.templateFor ?? null
+    }
     if (!Object.keys(data).length) return { ok: true }
     if ('title' in data || 'content' in data) data.editedAt = new Date().toISOString()
+    if ('content' in data) await keepSnapshot(session, asId(id))
     await payload.update({ collection: 'note-pages', id: asId(id), data, user, overrideAccess: false })
     return { ok: true }
   } catch (error) {
@@ -488,61 +535,10 @@ export async function deletePageForever(id: number): Promise<ActionResult> {
   }
 }
 
-// -------------------------------------------------------------------- search
-
-export type SearchHit = {
-  id: number
-  notebookId: number
-  notebookTitle: string
-  title: string
-  icon: string
-  snippet: string
-}
+// -------------------------------------------------------------- page links
+// (Searching notebooks and the journal lives in search-actions.ts.)
 
 const MAX_QUERY = 100
-
-/** Every word must appear in the title or the text, across all notebooks. */
-export async function searchNotes(query: string): Promise<ActionResult<SearchHit[]>> {
-  try {
-    const { payload, user } = await requireActionSession()
-    const q = cleanText(query, MAX_QUERY).trim()
-    const words = q.split(/\s+/).filter(Boolean).slice(0, 5)
-    if (!words.length) return { ok: true, data: [] }
-
-    const where: Where = {
-      and: words.map((w): Where => ({ or: [{ title: { contains: w } }, { plainText: { contains: w } }] })),
-    }
-    const [pages, notebooks] = await Promise.all([
-      payload.find({
-        collection: 'note-pages',
-        where,
-        select: { title: true, icon: true, notebook: true, plainText: true },
-        sort: ['-updatedAt', '-id'],
-        limit: 30,
-        depth: 0,
-        user,
-        overrideAccess: false,
-      }),
-      payload.find({ collection: 'notebooks', select: { title: true }, pagination: false, user, overrideAccess: false }),
-    ])
-    const titles = new Map(notebooks.docs.map((n) => [n.id, n.title]))
-    return {
-      ok: true,
-      data: pages.docs.map((p) => ({
-        id: p.id,
-        notebookId: idOf(p.notebook)!,
-        notebookTitle: titles.get(idOf(p.notebook)!) ?? '',
-        title: p.title ?? '',
-        icon: p.icon ?? '',
-        snippet: snippetAround(p.plainText ?? '', q),
-      })),
-    }
-  } catch (error) {
-    return fail(error)
-  }
-}
-
-// -------------------------------------------------------------- page links
 
 export type PageLinkInfo = { id: number; title: string; icon: string; kind: string; notebookId: number; notebookTitle: string }
 
@@ -833,6 +829,123 @@ export async function getUploadMode(): Promise<ActionResult<'s3' | 'local' | 'of
   try {
     await requireActionSession()
     return { ok: true, data: process.env.S3_BUCKET ? 's3' : process.env.VERCEL ? 'off' : 'local' }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export type TemplateInfo = { id: number; title: string; icon: string }
+
+/** Pages marked as templates (a page's ••• → 用作範本) for this kind of note. */
+export async function listTemplates(kind: TemplateKind): Promise<ActionResult<TemplateInfo[]>> {
+  try {
+    const { payload, user } = await requireActionSession()
+    if (!TEMPLATE_KIND_VALUES.has(String(kind))) throw new Error('範本類型錯誤')
+    const { docs } = await payload.find({
+      collection: 'note-pages',
+      where: { templateFor: { equals: kind } },
+      select: { title: true, icon: true },
+      sort: 'title',
+      limit: 30,
+      depth: 0,
+      user,
+      overrideAccess: false,
+    })
+    return { ok: true, data: docs.map((p) => ({ id: p.id, title: p.title ?? '', icon: p.icon ?? '' })) }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/** A template's content, to copy into an empty note. */
+export async function getTemplateContent(id: number): Promise<ActionResult<unknown[]>> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const page = await payload.findByID({
+      collection: 'note-pages',
+      id: asId(id),
+      depth: 0,
+      select: { content: true, templateFor: true },
+      user,
+      overrideAccess: false,
+    })
+    if (!page.templateFor) throw new Error('這一頁已經不是範本了')
+    return { ok: true, data: Array.isArray(page.content) ? page.content : [] }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export type BacklinkInfo = { id: number; notebookId: number; title: string; icon: string }
+
+/** Pages that link to this one (a 連結到頁面 block anywhere in them, inside toggles and columns too). */
+export async function getBacklinks(pageId: number): Promise<ActionResult<BacklinkInfo[]>> {
+  try {
+    const { payload } = await requireActionSession()
+    const id = asId(pageId)
+    // A JSON path query: Payload's own `where` can't look inside nested blocks.
+    const { rows } = await (payload.db as unknown as PostgresAdapter).drizzle.execute(sql`
+      SELECT "id", "notebook_id", "title", "icon" FROM "note_pages"
+      WHERE "deleted_at" IS NULL AND "id" <> ${id}
+        AND jsonb_path_exists(
+          "content",
+          '$.** ? (@.type == "pageLink" && @.props.mode == "link" && @.props.pageId == $id)',
+          jsonb_build_object('id', ${id}::int)
+        )
+      ORDER BY "edited_at" DESC NULLS LAST
+      LIMIT 50`)
+    return {
+      ok: true,
+      data: rows.map((r) => ({ id: Number(r.id), notebookId: Number(r.notebook_id), title: String(r.title ?? ''), icon: String(r.icon ?? '') })),
+    }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export type SnapshotItem = { id: number; createdAt: string; title: string; words: number; preview: string }
+
+/** A page's earlier versions, newest first (••• → 版本紀錄). */
+export async function listSnapshots(pageId: number): Promise<ActionResult<SnapshotItem[]>> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const { docs } = await payload.find({
+      collection: 'page-snapshots',
+      where: { page: { equals: asId(pageId) } },
+      sort: '-createdAt',
+      limit: SNAPSHOTS_KEPT,
+      depth: 0,
+      select: { title: true, content: true, createdAt: true },
+      user,
+      overrideAccess: false,
+    })
+    return {
+      ok: true,
+      data: docs.map((s) => {
+        const text = blocksToText(s.content)
+        return { id: s.id, createdAt: s.createdAt, title: s.title ?? '', words: countWords(text).words, preview: text.slice(0, 240) }
+      }),
+    }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function getSnapshot(id: number): Promise<ActionResult<{ title: string; content: unknown[] }>> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const s = await payload.findByID({ collection: 'page-snapshots', id: asId(id), depth: 0, select: { title: true, content: true }, user, overrideAccess: false })
+    return { ok: true, data: { title: s.title ?? '', content: Array.isArray(s.content) ? s.content : [] } }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/** Keeps the page as it is now before a restore replaces it, so the restore can be undone too. */
+export async function snapshotPage(pageId: number): Promise<ActionResult> {
+  try {
+    await keepSnapshot(await requireActionSession(), asId(pageId), true)
+    return { ok: true }
   } catch (error) {
     return fail(error)
   }

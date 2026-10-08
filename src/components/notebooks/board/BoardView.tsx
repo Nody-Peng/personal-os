@@ -152,15 +152,24 @@ function KanbanView({
 }) {
   const [dragging, setDragging] = useState<number | null>(null)
   const [drop, setDrop] = useState<Drop>(null)
+  // Drag events can outrun React's re-render (a quick drop lands before the
+  // last dragover's state does), so handlers read the card being dragged from a ref.
+  const draggingRef = useRef<number | null>(null)
 
-  const finish = async () => {
-    const id = dragging
-    const target = drop
+  const end = () => {
+    draggingRef.current = null
     setDragging(null)
     setDrop(null)
-    if (id == null || !target) return
-    const error = await moveCard(boardId, id, target.status, target.index)
-    if (error) reportNoteError(error)
+  }
+
+  /** Where the dragged card would land: before the first card whose middle is below the pointer. */
+  const targetAt = (column: HTMLElement, status: ItemStatus, y: number, id: number) => {
+    const rows = [...column.querySelectorAll<HTMLElement>('[data-card]')].filter((el) => Number(el.dataset.card) !== id)
+    const index = rows.findIndex((el) => {
+      const r = el.getBoundingClientRect()
+      return y < r.top + r.height / 2
+    })
+    return { status, index: index === -1 ? rows.length : index }
   }
 
   return (
@@ -168,29 +177,34 @@ function KanbanView({
       <div className="flex min-w-max items-start gap-3">
         {ITEM_STATUSES.map((s) => {
           const cards = columnOf(items, s.value)
-          const visible = cards.filter((c) => c.id !== dragging)
+          // The dragged card stays in the DOM (faded): removing the drag source
+          // makes Chrome cancel the drag. Drop indexes skip it.
+          const rest = cards.filter((c) => c.id !== dragging).length
+          let slot = 0
           return (
             <div
               key={s.value}
               className={`w-[min(16rem,78vw)] shrink-0 snap-start rounded-xl p-2 ${COLUMN_TINT[s.tone]}`}
+              onDragEnter={(e) => {
+                if (draggingRef.current != null) e.preventDefault()
+              }}
               onDragOver={(e) => {
-                if (dragging == null) return
+                const id = draggingRef.current
+                if (id == null) return
                 e.preventDefault()
                 e.dataTransfer.dropEffect = 'move'
-                // Insert before the first card whose middle is below the pointer.
-                const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('[data-card]')].filter(
-                  (el) => Number(el.dataset.card) !== dragging,
-                )
-                const index = rows.findIndex((el) => {
-                  const r = el.getBoundingClientRect()
-                  return e.clientY < r.top + r.height / 2
-                })
-                const next = { status: s.value, index: index === -1 ? rows.length : index }
-                if (drop?.status !== next.status || drop.index !== next.index) setDrop(next)
+                const next = targetAt(e.currentTarget, s.value, e.clientY, id)
+                setDrop((d) => (d?.status === next.status && d.index === next.index ? d : next))
               }}
               onDrop={(e) => {
+                const id = draggingRef.current
+                if (id == null) return
                 e.preventDefault()
-                void finish()
+                const target = targetAt(e.currentTarget, s.value, e.clientY, id)
+                end()
+                void moveCard(boardId, id, target.status, target.index).then((error) => {
+                  if (error) reportNoteError(error)
+                })
               }}
             >
               <div className="mb-2 flex items-center gap-2 px-1">
@@ -198,42 +212,44 @@ function KanbanView({
                 <span className="text-xs text-muted">{cards.length}</span>
               </div>
               <ul className="flex flex-col gap-1.5">
-                {visible.map((card, i) => (
-                  <li key={card.id} data-card={card.id}>
-                    {drop?.status === s.value && drop.index === i && <DropLine />}
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.effectAllowed = 'move'
-                        e.dataTransfer.setData('text/plain', String(card.id))
-                        setDragging(card.id)
-                      }}
-                      onDragEnd={() => {
-                        setDragging(null)
-                        setDrop(null)
-                      }}
-                      onClick={() => onOpen(card.id)}
-                      className="flex w-full flex-col gap-1 rounded-lg border border-line bg-surface px-3 py-2 text-left shadow-[0_1px_2px_rgba(17,17,17,0.04)] transition-colors hover:border-line-strong"
-                    >
-                      <span className="flex items-start gap-2">
-                        <span className="mt-0.5 grid size-4 shrink-0 place-items-center text-sm leading-none text-muted">
-                          <NoteIcon icon={card.icon} fallback={<FileText size={15} />} />
+                {cards.map((card) => {
+                  const lifted = card.id === dragging
+                  const i = lifted ? -1 : slot++
+                  return (
+                    <li key={card.id} data-card={card.id} className={lifted ? 'opacity-40' : undefined}>
+                      {drop?.status === s.value && drop.index === i && <DropLine />}
+                      <button
+                        type="button"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = 'move'
+                          e.dataTransfer.setData('text/plain', String(card.id))
+                          draggingRef.current = card.id
+                          setDragging(card.id)
+                        }}
+                        onDragEnd={end}
+                        onClick={() => onOpen(card.id)}
+                        className="flex w-full flex-col gap-1 rounded-lg border border-line bg-surface px-3 py-2 text-left shadow-[0_1px_2px_rgba(17,17,17,0.04)] transition-colors hover:border-line-strong"
+                      >
+                        <span className="flex items-start gap-2">
+                          <span className="mt-0.5 grid size-4 shrink-0 place-items-center text-sm leading-none text-muted">
+                            <NoteIcon icon={card.icon} fallback={<FileText size={15} />} />
+                          </span>
+                          <span className={`text-sm font-medium break-words ${card.title ? 'text-ink-strong' : 'text-faint'}`}>
+                            {card.title || UNTITLED}
+                          </span>
                         </span>
-                        <span className={`text-sm font-medium break-words ${card.title ? 'text-ink-strong' : 'text-faint'}`}>
-                          {card.title || UNTITLED}
-                        </span>
-                      </span>
-                      {card.startDate && (
-                        <span className="flex items-center gap-1 pl-6 text-xs text-muted">
-                          <CalendarBlank size={12} />
-                          {formatRange(card.startDate, card.endDate)}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-                {drop?.status === s.value && drop.index >= visible.length && <DropLine />}
+                        {card.startDate && (
+                          <span className="flex items-center gap-1 pl-6 text-xs text-muted">
+                            <CalendarBlank size={12} />
+                            {formatRange(card.startDate, card.endDate)}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  )
+                })}
+                {drop?.status === s.value && drop.index >= rest && <DropLine />}
               </ul>
               <button
                 type="button"

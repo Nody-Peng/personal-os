@@ -75,6 +75,7 @@ export interface Config {
     journals: Journal;
     notebooks: Notebook;
     'note-pages': NotePage;
+    'page-snapshots': PageSnapshot;
     media: Media;
     'toefl-scores': ToeflScore;
     ideas: Idea;
@@ -94,6 +95,7 @@ export interface Config {
     journals: JournalsSelect<false> | JournalsSelect<true>;
     notebooks: NotebooksSelect<false> | NotebooksSelect<true>;
     'note-pages': NotePagesSelect<false> | NotePagesSelect<true>;
+    'page-snapshots': PageSnapshotsSelect<false> | PageSnapshotsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
@@ -195,6 +197,10 @@ export interface DailyLog {
     | number
     | boolean
     | null;
+  /**
+   * 儲存時自動產生
+   */
+  plainText?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -254,6 +260,10 @@ export interface Task {
     | number
     | boolean
     | null;
+  /**
+   * 儲存時自動產生
+   */
+  plainText?: string | null;
   migratedFrom?: (number | null) | Task;
   updatedAt: string;
   createdAt: string;
@@ -282,6 +292,10 @@ export interface WeeklyReview {
     | null;
   theme?: (number | null) | Idea;
   themeReason?: string | null;
+  /**
+   * 儲存時自動產生
+   */
+  plainText?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -335,6 +349,10 @@ export interface MonthlyNote {
     | number
     | boolean
     | null;
+  /**
+   * 儲存時自動產生
+   */
+  plainText?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -385,6 +403,7 @@ export interface NotePage {
   fullWidth?: boolean | null;
   locked?: boolean | null;
   favorite?: boolean | null;
+  templateFor?: ('page' | 'day' | 'week') | null;
   /**
    * YYYY-MM-DD
    */
@@ -421,11 +440,32 @@ export interface NotePage {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "page-snapshots".
+ */
+export interface PageSnapshot {
+  id: number;
+  page?: (number | null) | NotePage;
+  title?: string | null;
+  content?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "media".
  */
 export interface Media {
   id: number;
   alt?: string | null;
+  unusedSince?: string | null;
   prefix?: string | null;
   _objectKey?: string | null;
   updatedAt: string;
@@ -547,6 +587,10 @@ export interface PayloadLockedDocument {
         value: number | NotePage;
       } | null)
     | ({
+        relationTo: 'page-snapshots';
+        value: number | PageSnapshot;
+      } | null)
+    | ({
         relationTo: 'media';
         value: number | Media;
       } | null)
@@ -619,6 +663,7 @@ export interface DailyLogsSelect<T extends boolean = true> {
   noonItems?: T;
   eveningItems?: T;
   note?: T;
+  plainText?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -637,6 +682,7 @@ export interface TasksSelect<T extends boolean = true> {
   startDate?: T;
   endDate?: T;
   body?: T;
+  plainText?: T;
   migratedFrom?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -663,6 +709,7 @@ export interface WeeklyReviewsSelect<T extends boolean = true> {
   review?: T;
   theme?: T;
   themeReason?: T;
+  plainText?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -673,6 +720,7 @@ export interface WeeklyReviewsSelect<T extends boolean = true> {
 export interface MonthlyNotesSelect<T extends boolean = true> {
   month?: T;
   review?: T;
+  plainText?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -720,6 +768,7 @@ export interface NotePagesSelect<T extends boolean = true> {
   fullWidth?: T;
   locked?: T;
   favorite?: T;
+  templateFor?: T;
   startDate?: T;
   endDate?: T;
   cover?: T;
@@ -733,10 +782,22 @@ export interface NotePagesSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "page-snapshots_select".
+ */
+export interface PageSnapshotsSelect<T extends boolean = true> {
+  page?: T;
+  title?: T;
+  content?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "media_select".
  */
 export interface MediaSelect<T extends boolean = true> {
   alt?: T;
+  unusedSince?: T;
   prefix?: T;
   _objectKey?: T;
   updatedAt?: T;

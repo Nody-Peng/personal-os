@@ -1,7 +1,9 @@
 import type { CollectionConfig, TextField } from 'payload'
 import { authenticated } from '@/access/authenticated'
 import { dayField } from '@/fields/dayField'
+import { searchTextField, searchTextHook } from '@/fields/searchText'
 import { isDay } from '@/lib/day'
+import { taskText } from '@/lib/searchText'
 import { MAX_IMPORTANT_PER_DAY, TASK_KINDS, TASK_STATUSES } from '@/lib/tasks'
 
 const optionalDay = (name: string, label: string): TextField =>
@@ -59,6 +61,7 @@ export const Tasks: CollectionConfig = {
       type: 'json',
       admin: { description: 'Notion 式編輯器的區塊資料（在前台編輯）' },
     },
+    searchTextField,
     {
       name: 'migratedFrom',
       label: '從哪一天移過來',
@@ -84,6 +87,7 @@ export const Tasks: CollectionConfig = {
       },
     ],
     beforeChange: [
+      searchTextHook(['body'], taskText),
       // Keep the day's list to three IMPORTANT items.
       async ({ data, originalDoc, operation, req }) => {
         const merged = { ...originalDoc, ...data }

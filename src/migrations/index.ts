@@ -9,6 +9,7 @@ import * as migration_20261004_112651_notebooks_v2 from './20261004_112651_noteb
 import * as migration_20261004_112659_day_plan_cleanup from './20261004_112659_day_plan_cleanup';
 import * as migration_20261005_152851_task_migrated_from_unique from './20261005_152851_task_migrated_from_unique';
 import * as migration_20261005_153425_page_options from './20261005_153425_page_options';
+import * as migration_20261007_082125_ux_batch from './20261007_082125_ux_batch';
 
 export const migrations = [
   {
@@ -64,6 +65,11 @@ export const migrations = [
   {
     up: migration_20261005_153425_page_options.up,
     down: migration_20261005_153425_page_options.down,
-    name: '20261005_153425_page_options'
+    name: '20261005_153425_page_options',
+  },
+  {
+    up: migration_20261007_082125_ux_batch.up,
+    down: migration_20261007_082125_ux_batch.down,
+    name: '20261007_082125_ux_batch'
   },
 ];

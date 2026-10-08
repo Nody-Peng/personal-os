@@ -242,6 +242,7 @@ function Panel({ id, onClose }: { id: number; onClose: () => void }) {
                   initial={task.body}
                   placeholder="寫下細項，或按 / 插入標題、待辦清單…"
                   onStatus={(status, err) => setBodyStatus({ status, error: err })}
+                  allowUploads
                 />
               </div>
             </>

@@ -54,6 +54,16 @@ export function blocksHaveText(blocks: unknown): boolean {
   return blocksToText(blocks).length > 0
 }
 
+/** Nothing written: no blocks, or only empty paragraphs (a fresh editor holds one). */
+export function isBlankDocument(blocks: unknown): boolean {
+  if (!Array.isArray(blocks)) return true
+  return blocks.every((b) => {
+    const block = (b ?? {}) as LooseBlock
+    const empty = !block.content || (Array.isArray(block.content) && block.content.length === 0) || block.content === ''
+    return block.type === 'paragraph' && empty && (!Array.isArray(block.children) || block.children.length === 0)
+  })
+}
+
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu
 
 /** Word count the way people expect it: each CJK character is a word, plus Latin/number words. */

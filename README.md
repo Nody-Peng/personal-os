@@ -68,6 +68,41 @@ npm run dev           # 終端機 2：http://localhost:3000
 
 沒設定這些變數時，正式環境會顯示「還沒設定檔案儲存空間」；本機開發則存在專案的 `media/` 資料夾。
 
+截圖（PNG）上傳前會用 oxipng 無損壓縮（像素完全不變）；照片會縮到最長邊 2400px、存成 JPEG。
+
+### 每日排程（防止 Supabase 暫停、清理檔案）
+
+`vercel.json` 設了一個每天台灣時間凌晨 3 點的 Vercel Cron（`/api/cron/daily`），會：
+
+- 把放在垃圾桶超過 30 天的頁面永久刪除（所有筆記本）
+- 刪掉已經沒有頁面的版本紀錄
+- 找出沒有任何頁面、日記或版本紀錄用到的上傳檔案：先標記，**連續 7 天都沒人用**才連同 Supabase Storage 裡的檔案一起刪除
+- 這些查詢也算資料庫活動，免費的 Supabase 專案不會因為一週沒動靜而被暫停
+
+在 Vercel 加環境變數 `CRON_SECRET`（至少 16 個字元的隨機字串，例如 `openssl rand -hex 32`），重新部署。Vercel 呼叫時會自動帶上這個值；沒設定時這個網址一律拒絕。
+
+### 備份（GitHub Actions）
+
+`.github/workflows/backup.yml` 每天台灣時間凌晨 3:30 用 `pg_dump` 匯出資料庫（`public` schema，也就是所有筆記、日記、設定），用密碼加密後存成 workflow 的 artifact，保留 30 天。**這個 repo 是公開的，任何登入 GitHub 的人都能下載 artifact**，所以備份一定是加密過的；沒設定密碼時 workflow 會直接失敗。
+
+1. Supabase → **Connect** → 複製 **Session pooler** 的連線字串（port 5432，填入密碼）。不能用 Direct connection：它只有 IPv6，GitHub 的機器連不到。
+2. GitHub repo → Settings → Secrets and variables → **Actions** → New repository secret：
+   - `BACKUP_DATABASE_URL`：步驟 1 的連線字串
+   - `BACKUP_PASSPHRASE`：一段至少 20 個字元的隨機密碼，**存進密碼管理員**（忘了就打不開備份）
+3. Actions → Backup database → **Run workflow** 先手動跑一次確認成功。
+
+上傳的圖片和檔案在 Supabase Storage，不在這份備份裡。
+
+還原（需要 `gpg` 和 PostgreSQL 17 的 `pg_restore`）：
+
+```bash
+gpg --decrypt personal-os-YYYYMMDD-HHMM.dump.gpg > personal-os.dump
+```
+
+```bash
+pg_restore --clean --if-exists --no-owner --no-privileges --dbname "<資料庫連線字串>" personal-os.dump
+```
+
 ### 修改資料結構之後
 
 本機開發時 Payload 會直接同步資料表；正式環境只透過 migration 變更：

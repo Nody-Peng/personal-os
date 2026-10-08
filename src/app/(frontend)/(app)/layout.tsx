@@ -1,6 +1,8 @@
 import React, { Suspense } from 'react'
 import { AppNav } from '@/components/AppNav'
+import { GlobalSearch } from '@/components/search/GlobalSearch'
 import { TaskPeek } from '@/components/tasks/TaskPeek'
+import { EditorToasts } from '@/components/Toast'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,6 +12,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Suspense>
         <TaskPeek />
       </Suspense>
+      <GlobalSearch />
+      <EditorToasts />
     </>
   )
 }

@@ -1,5 +1,7 @@
 import type { CollectionConfig } from 'payload'
 import { authenticated } from '@/access/authenticated'
+import { searchTextField, searchTextHook } from '@/fields/searchText'
+import { monthText } from '@/lib/searchText'
 
 export const MonthlyNotes: CollectionConfig = {
   slug: 'monthly-notes',
@@ -33,5 +35,9 @@ export const MonthlyNotes: CollectionConfig = {
       type: 'json',
       admin: { description: 'Notion 式編輯器的區塊資料（在前台編輯）' },
     },
+    searchTextField,
   ],
+  hooks: {
+    beforeChange: [searchTextHook(['review'], monthText)],
+  },
 }

@@ -7,17 +7,15 @@ import { updateNotebook } from '@/app/(frontend)/notebook-actions'
 import { NotebookCover } from '@/components/books/BookCover'
 import { BookLink } from '@/components/books/BookOpener'
 import type { NotebookItem } from '@/lib/notes'
+import { openSearch } from '@/components/search/GlobalSearch'
 import { NotebookDialog } from './NotebookDialog'
-import { NoteSearch, useSearchShortcut } from './NoteSearch'
 
 /** The lower shelf: notebooks you make yourself, plus a blank book to add one. */
 export function NotebookShelf({ notebooks, offset }: { notebooks: NotebookItem[]; offset: number }) {
   const [creating, setCreating] = useState(false)
-  const [searching, setSearching] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
-  useSearchShortcut(() => setSearching(true))
 
   const active = notebooks.filter((n) => !n.archived)
   const archived = notebooks.filter((n) => n.archived)
@@ -38,7 +36,7 @@ export function NotebookShelf({ notebooks, offset }: { notebooks: NotebookItem[]
           </h2>
         </div>
         <div className="flex gap-2">
-          <button type="button" className="btn btn-quiet" onClick={() => setSearching(true)}>
+          <button type="button" className="btn btn-quiet" onClick={openSearch}>
             <MagnifyingGlass size={16} />
             搜尋
             <kbd className="ml-1 hidden rounded border border-line bg-canvas px-1 font-mono text-[10px] text-muted md:inline">Ctrl K</kbd>
@@ -111,7 +109,6 @@ export function NotebookShelf({ notebooks, offset }: { notebooks: NotebookItem[]
       )}
 
       {creating && <NotebookDialog onClose={() => setCreating(false)} />}
-      {searching && <NoteSearch onClose={() => setSearching(false)} />}
     </section>
   )
 }

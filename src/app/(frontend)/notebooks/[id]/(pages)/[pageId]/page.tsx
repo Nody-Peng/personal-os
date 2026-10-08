@@ -50,6 +50,7 @@ export default async function NotePage({ params }: Props) {
         fullWidth: page.fullWidth ?? false,
         locked: page.locked ?? false,
         favorite: page.favorite ?? false,
+        templateFor: page.templateFor ?? null,
       }}
       renderedAt={renderStamp()}
     />

@@ -139,6 +139,7 @@ export default async function MonthPage({ params, searchParams }: Props) {
             initial={Array.isArray(note?.review) ? note.review : null}
             renderedAt={renderStamp()}
             placeholder="這個月最大的進步、最想改的習慣、下個月的重點…"
+            allowUploads
           />
         </div>
       </section>

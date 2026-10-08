@@ -1,13 +1,17 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type Ref } from 'react'
 import { saveDailyLog } from '@/app/(frontend)/actions'
 import { saveMonthNote, saveWeekNote, updateTask } from '@/app/(frontend)/journal-actions'
 import { updatePage } from '@/app/(frontend)/notebook-actions'
 import type { ActionResult } from '@/lib/actionUtils'
+import type { TemplateKind } from '@/lib/options'
 import { markSaved, rememberLocal, useRenderStamp, withLocal } from '@/lib/noteCache'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
+import type { EditorHandle } from './BlockEditorInner'
+
+export type { EditorHandle } from './BlockEditorInner'
 
 const Inner = dynamic(() => import('./BlockEditorInner'), {
   ssr: false,
@@ -71,10 +75,26 @@ type Props = {
   allowUploads?: boolean
   /** False for a locked page: read-only, no menus. */
   editable?: boolean
+  /** While empty, offer the templates for this kind of note (editor/TemplateBar). */
+  templateKind?: TemplateKind
+  /** Lets the page replace the content (restoring a version). */
+  editorHandle?: Ref<EditorHandle>
 }
 
 /** Notion-style editor that autosaves a second after typing stops. */
-export function BlockEditor({ target, initial, renderedAt, placeholder = '輸入文字，或按 / 插入區塊', onStatus, onChange: onEdit, className, allowUploads, editable = true }: Props) {
+export function BlockEditor({
+  target,
+  initial,
+  renderedAt,
+  placeholder = '輸入文字，或按 / 插入區塊',
+  onStatus,
+  onChange: onEdit,
+  className,
+  allowUploads,
+  editable = true,
+  templateKind,
+  editorHandle,
+}: Props) {
   const { enqueue, status, error } = useSaveQueue()
   // Every editor records its latest document (so a board card edited in the
   // side peek and on its own page share one record); only editors fed by a
@@ -133,7 +153,16 @@ export function BlockEditor({ target, initial, renderedAt, placeholder = '輸入
 
   return (
     <div className="-mx-1">
-      <Inner initial={start} placeholder={placeholder} onChange={onChange} className={className} allowUploads={allowUploads} editable={editable} />
+      <Inner
+        initial={start}
+        placeholder={placeholder}
+        onChange={onChange}
+        className={className}
+        allowUploads={allowUploads}
+        editable={editable}
+        templateKind={templateKind}
+        handle={editorHandle}
+      />
       {/* Editors without their own status line still must not fail silently. */}
       {!onStatus && status === 'error' && (
         <p role="alert" className="mt-2 px-1 text-xs text-red-ink">

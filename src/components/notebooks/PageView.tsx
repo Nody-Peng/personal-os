@@ -5,15 +5,18 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { duplicatePage, updatePage, type PagePatch } from '@/app/(frontend)/notebook-actions'
-import { BlockEditor, SaveStatusText } from '@/components/editor/BlockEditor'
+import { BlockEditor, SaveStatusText, type EditorHandle } from '@/components/editor/BlockEditor'
 import { NoteContext } from '@/components/editor/NoteContext'
+import { forgetTemplates } from '@/components/editor/TemplateBar'
 import { blocksToText, countWords } from '@/lib/blocks'
 import { loadBoard, renameItem } from '@/lib/boardStore'
 import { pageWithEdits, peekLocal, rememberPageEdit, usePageStamp } from '@/lib/noteCache'
 import { MAX_PAGE_TITLE, UNTITLED, ancestorsOf, childrenOf, embeddedPageIds, type PageNode } from '@/lib/notes'
-import type { PageFont } from '@/lib/options'
+import { TEMPLATE_KINDS, type PageFont, type TemplateKind } from '@/lib/options'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
+import { Backlinks } from './Backlinks'
 import { BoardView } from './board/BoardView'
+import { HistoryDialog } from './HistoryDialog'
 import { ItemProperties } from './board/ItemProperties'
 import { IconPicker } from './IconPicker'
 import { useNoteEditorContext, useNotebook } from './NotebookShell'
@@ -36,6 +39,7 @@ export type PageData = {
   fullWidth: boolean
   locked: boolean
   favorite: boolean
+  templateFor: TemplateKind | null
 }
 
 const TITLE_DELAY = 500
@@ -69,6 +73,9 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
     favorite: page.favorite,
   })
   const [picking, setPicking] = useState(false)
+  const [templateFor, setTemplateFor] = useState(page.templateFor)
+  const [showHistory, setShowHistory] = useState(false)
+  const editor = useRef<EditorHandle>(null)
   const [embedded, setEmbedded] = useState(() => embeddedPageIds(page.content))
   const [body, setBody] = useState<{ status: SaveStatus; error: string | null }>({ status: 'idle', error: null })
   const { enqueue, status, error } = useSaveQueue()
@@ -122,6 +129,14 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
     rememberPageEdit(id, patch)
     if ('favorite' in patch) patchPage(id, { favorite: patch.favorite })
     save(patch)
+  }
+
+  const changeTemplate = (next: TemplateKind | null) => {
+    setTemplateFor(next)
+    rememberPageEdit(id, { templateFor: next })
+    save({ templateFor: next })
+    forgetTemplates()
+    say(next ? `已設為${TEMPLATE_KINDS.find((k) => k.value === next)!.label}` : '已不再是範本')
   }
 
   /** What the editor shows right now (it may not be saved yet). */
@@ -244,8 +259,21 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
           onPrint={() => window.print()}
           onToggles={page.kind === 'board' ? undefined : setToggles}
           onTrash={() => trash(id, page.boardId)}
+          onHistory={page.kind === 'board' ? undefined : () => setShowHistory(true)}
+          template={page.kind === 'board' ? undefined : { value: templateFor, onChange: changeTemplate }}
         />
       </header>
+      {showHistory && (
+        <HistoryDialog
+          pageId={id}
+          locked={locked}
+          onClose={() => setShowHistory(false)}
+          onRestore={(content, at) => {
+            editor.current?.replace(content)
+            say(`已還原到 ${at} 的版本`)
+          }}
+        />
+      )}
 
       <PageCover cover={cover.url} position={cover.position} onChange={changeCover} readOnly={locked} />
       {coverPicker.input}
@@ -335,6 +363,9 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
                 className="note-editor"
                 placeholder="輸入文字，或按 / 插入標題、清單、頁面、看板…"
                 allowUploads
+                // A template page itself doesn't offer templates.
+                templateKind={templateFor ? undefined : 'page'}
+                editorHandle={editor}
                 onChange={(blocks) => {
                   rememberPageEdit(id, { content: blocks })
                   const next = embeddedPageIds(blocks)
@@ -345,6 +376,8 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
             </NoteContext.Provider>
           </div>
         )}
+
+        <Backlinks pageId={id} />
 
         {page.kind !== 'board' && (kids.length > 0 || !locked) && (
           <section aria-label="子頁面" className="mt-10 border-t border-line pt-4 print:hidden">

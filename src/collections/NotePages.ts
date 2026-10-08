@@ -3,7 +3,7 @@ import { authenticated } from '@/access/authenticated'
 import { blocksToText } from '@/lib/blocks'
 import { isDay } from '@/lib/day'
 import { MAX_ICON_LENGTH, MAX_PAGE_TITLE } from '@/lib/notes'
-import { ITEM_STATUSES, PAGE_FONTS, PAGE_KINDS, selectOptions } from '@/lib/options'
+import { ITEM_STATUSES, PAGE_FONTS, PAGE_KINDS, selectOptions, TEMPLATE_KINDS } from '@/lib/options'
 
 const optionalDay = (value: string | null | undefined) => !value || isDay(value) || '請用 YYYY-MM-DD 格式'
 
@@ -60,6 +60,7 @@ export const NotePages: CollectionConfig = {
         { name: 'fullWidth', label: '全寬', type: 'checkbox', defaultValue: false },
         { name: 'locked', label: '鎖定頁面', type: 'checkbox', defaultValue: false },
         { name: 'favorite', label: '我的最愛', type: 'checkbox', defaultValue: false, index: true },
+        { name: 'templateFor', label: '範本', type: 'select', index: true, options: selectOptions(TEMPLATE_KINDS) },
       ],
     },
     {

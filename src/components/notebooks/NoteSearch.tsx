@@ -1,12 +1,20 @@
 'use client'
 
-import { FileText, MagnifyingGlass } from '@phosphor-icons/react'
+import { CalendarBlank, CalendarDots, CheckSquare, FileText, MagnifyingGlass, NotePencil } from '@phosphor-icons/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
-import { searchNotes, type SearchHit } from '@/app/(frontend)/notebook-actions'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { search, type SearchHit, type SearchKind } from '@/app/(frontend)/search-actions'
 import { UNTITLED } from '@/lib/notes'
 import { Modal } from './Modal'
 import { NoteIcon } from './NoteIcon'
+
+const KIND_ICONS: Record<SearchKind, ReactNode> = {
+  page: <FileText size={18} />,
+  day: <NotePencil size={18} />,
+  task: <CheckSquare size={18} />,
+  week: <CalendarDots size={18} />,
+  month: <CalendarBlank size={18} />,
+}
 
 const DEBOUNCE = 220
 
@@ -47,7 +55,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   )
 }
 
-/** Full-text search across every notebook. */
+/** Full-text search across every notebook and the journal. */
 export function NoteSearch({ onClose }: { onClose: () => void }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
@@ -60,7 +68,7 @@ export function NoteSearch({ onClose }: { onClose: () => void }) {
     if (!q) return
     let alive = true
     const timer = window.setTimeout(async () => {
-      const found = await searchNotes(q)
+      const found = await search(q)
       if (!alive) return
       setResult({ query: q, hits: found.ok ? (found.data ?? []) : [], ok: found.ok })
       setActive(0)
@@ -76,12 +84,12 @@ export function NoteSearch({ onClose }: { onClose: () => void }) {
 
   const go = (hit: SearchHit | undefined) => {
     if (!hit) return
-    router.push(`/notebooks/${hit.notebookId}/${hit.id}`)
+    router.push(hit.href)
     onClose()
   }
 
   return (
-    <Modal title="搜尋筆記" onClose={onClose} size="lg" hideTitle>
+    <Modal title="搜尋" onClose={onClose} size="lg" hideTitle>
       <div className="flex items-center gap-3 border-b border-line px-4">
         <MagnifyingGlass size={18} className="shrink-0 text-muted" />
         <input
@@ -100,7 +108,7 @@ export function NoteSearch({ onClose }: { onClose: () => void }) {
               go(hits[active])
             }
           }}
-          placeholder="搜尋所有筆記本的標題和內容"
+          placeholder="搜尋筆記本、日記、任務、週記和月統整"
           aria-label="搜尋"
           role="combobox"
           aria-expanded={hits.length > 0}
@@ -112,7 +120,7 @@ export function NoteSearch({ onClose }: { onClose: () => void }) {
 
       <ul id="note-search-results" role="listbox" className="max-h-[60dvh] overflow-y-auto p-2">
         {hits.map((hit, i) => (
-          <li key={hit.id} role="option" aria-selected={i === active}>
+          <li key={hit.key} role="option" aria-selected={i === active}>
             <button
               type="button"
               onClick={() => go(hit)}
@@ -120,14 +128,14 @@ export function NoteSearch({ onClose }: { onClose: () => void }) {
               className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left ${i === active ? 'bg-sunken' : ''}`}
             >
               <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-base leading-none text-muted">
-                <NoteIcon icon={hit.icon} fallback={<FileText size={18} />} />
+                {hit.kind === 'page' ? <NoteIcon icon={hit.icon} fallback={KIND_ICONS.page} /> : KIND_ICONS[hit.kind]}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
                   <span className="truncate font-medium text-ink-strong">
                     <Highlight text={hit.title || UNTITLED} query={query} />
                   </span>
-                  <span className="shrink-0 text-xs text-muted">{hit.notebookTitle}</span>
+                  <span className="shrink-0 text-xs text-muted">{hit.context}</span>
                 </span>
                 {hit.snippet && (
                   <span className="mt-0.5 line-clamp-2 text-sm text-muted">
@@ -139,7 +147,7 @@ export function NoteSearch({ onClose }: { onClose: () => void }) {
           </li>
         ))}
       </ul>
-      {state === 'done' && !hits.length && <p className="px-5 pb-6 text-sm text-muted">找不到符合「{q}」的頁面。</p>}
+      {state === 'done' && !hits.length && <p className="px-5 pb-6 text-sm text-muted">找不到符合「{q}」的內容。</p>}
       {state === 'error' && <p className="px-5 pb-6 text-sm text-red-ink">搜尋失敗，請再試一次。</p>}
       {state === 'idle' && <p className="px-5 pb-6 text-sm text-muted">輸入關鍵字，多個字詞用空格分開。</p>}
     </Modal>

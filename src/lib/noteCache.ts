@@ -13,7 +13,7 @@
 
 import { useEffect } from 'react'
 import type { PageNode } from './notes'
-import type { PageFont } from './options'
+import type { PageFont, TemplateKind } from './options'
 
 const seen = new Set<string>()
 const local = new Map<string, unknown>()
@@ -78,6 +78,7 @@ export type PageEdits = {
   fullWidth?: boolean
   locked?: boolean
   favorite?: boolean
+  templateFor?: TemplateKind | null
 }
 
 const pageKey = (id: number) => `page:${id}`

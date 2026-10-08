@@ -71,6 +71,8 @@ export async function WeekReview({ session, monday }: { session: Session; monday
           initial={Array.isArray(review?.review) ? review.review : null}
           renderedAt={renderStamp()}
           placeholder="這週做得好的、斷掉的那天和原因、下週要調整什麼…"
+          allowUploads
+          templateKind="week"
         />
       </div>
       <div className="mt-5 border-t border-line pt-5">
