@@ -78,6 +78,7 @@ export interface Config {
     'page-snapshots': PageSnapshot;
     media: Media;
     books: Book;
+    'book-shelves': BookShelf;
     'toefl-scores': ToeflScore;
     ideas: Idea;
     users: User;
@@ -99,6 +100,7 @@ export interface Config {
     'page-snapshots': PageSnapshotsSelect<false> | PageSnapshotsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     books: BooksSelect<false> | BooksSelect<true>;
+    'book-shelves': BookShelvesSelect<false> | BookShelvesSelect<true>;
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
@@ -510,6 +512,17 @@ export interface Book {
     | number
     | boolean
     | null;
+  finishedAt?: string | null;
+  shelves?: (number | BookShelf)[] | null;
+  highlights?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   prefix?: string | null;
   _objectKey?: string | null;
   updatedAt: string;
@@ -523,6 +536,17 @@ export interface Book {
   height?: number | null;
   focalX?: number | null;
   focalY?: number | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "book-shelves".
+ */
+export interface BookShelf {
+  id: number;
+  name: string;
+  position?: number | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -641,6 +665,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'books';
         value: number | Book;
+      } | null)
+    | ({
+        relationTo: 'book-shelves';
+        value: number | BookShelf;
       } | null)
     | ({
         relationTo: 'toefl-scores';
@@ -873,6 +901,9 @@ export interface BooksSelect<T extends boolean = true> {
   progress?: T;
   lastReadAt?: T;
   bookmarks?: T;
+  finishedAt?: T;
+  shelves?: T;
+  highlights?: T;
   prefix?: T;
   _objectKey?: T;
   updatedAt?: T;
@@ -886,6 +917,16 @@ export interface BooksSelect<T extends boolean = true> {
   height?: T;
   focalX?: T;
   focalY?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "book-shelves_select".
+ */
+export interface BookShelvesSelect<T extends boolean = true> {
+  name?: T;
+  position?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

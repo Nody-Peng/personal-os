@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { ReaderLoader } from '@/components/reader/ReaderLoader'
 import { getBook, toSummary } from '@/lib/bookQueries'
-import { bookmarksOf } from '@/lib/books'
+import { bookmarksOf, highlightsOf } from '@/lib/books'
 import { getSession, requireSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
@@ -28,5 +28,5 @@ export default async function ReadBook({ params }: Props) {
   const session = await requireSession(`/books/${id}`)
   const book = await getBook(session, id)
   if (!book) notFound()
-  return <ReaderLoader book={toSummary(book)} bookmarks={bookmarksOf(book.bookmarks)} />
+  return <ReaderLoader book={toSummary(book)} bookmarks={bookmarksOf(book.bookmarks)} highlights={highlightsOf(book.highlights)} />
 }

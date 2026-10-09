@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bookmarksOf, cleanBookmarks, cleanCfi, cleanCoverUrl } from '@/lib/books'
+import { bookmarksOf, cleanBookmarks, cleanCfi, cleanCoverUrl, cleanHighlights, cleanIds, highlightsOf, statusOf } from '@/lib/books'
 import { guessLanguage, segmentDocument } from '@/components/reader/sentences'
 import { storageName } from '@/lib/storageName'
 
@@ -68,5 +68,30 @@ describe('storageName', () => {
     expect(storageName('Harry Potter 哈利波特 (1).epub', 'book')).toMatch(/^Harry-Potter-1-[a-z0-9]{1,6}\.epub$/)
     // Two books whose names differ only in Chinese don't share a key.
     expect(storageName('三體.epub', 'book')).not.toBe(storageName('三體.epub', 'book'))
+  })
+})
+
+describe('highlights, ids and reading status', () => {
+  it('keeps highlights well formed', () => {
+    const [h] = cleanHighlights([{ id: 'a1-b2', cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:5)', text: 'x'.repeat(2000), color: 'purple', note: 42 }])
+    expect(h.text).toHaveLength(1000)
+    expect(h.color).toBe('yellow')
+    expect(h.note).toBe('42')
+    expect(() => cleanHighlights([{ id: '<script>', cfi: 'epubcfi(/6/2!/4/2/1:0)' }])).toThrow()
+    expect(highlightsOf('nope')).toEqual([])
+  })
+
+  it('takes unique positive ids only', () => {
+    expect(cleanIds([3, '3', 4], 10)).toEqual([3, 4])
+    expect(() => cleanIds([1, -2], 10)).toThrow()
+    expect(() => cleanIds([1, 2, 3], 2)).toThrow()
+    expect(() => cleanIds('1,2', 10)).toThrow()
+  })
+
+  it('tells unread, reading and finished books apart', () => {
+    expect(statusOf({ finishedAt: null, progress: 0, lastReadAt: null })).toBe('unread')
+    expect(statusOf({ finishedAt: null, progress: 0.4, lastReadAt: '2026-10-09T00:00:00Z' })).toBe('reading')
+    expect(statusOf({ finishedAt: null, progress: 0.999, lastReadAt: '2026-10-09T00:00:00Z' })).toBe('finished')
+    expect(statusOf({ finishedAt: '2026-10-09T00:00:00Z', progress: 0.2, lastReadAt: null })).toBe('finished')
   })
 })

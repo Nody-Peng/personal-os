@@ -9,6 +9,7 @@ import {
   CornersOut,
   Headphones,
   ListBullets,
+  MagnifyingGlass,
   TextAa,
   WarningCircle,
 } from '@phosphor-icons/react'
@@ -17,24 +18,31 @@ import { EpubCFI } from 'epubjs'
 import type { Location } from 'epubjs/types/rendition'
 import Link from 'next/link'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { saveBookmarks, saveReadingPosition } from '@/app/(frontend)/book-actions'
+import { saveBookmarks, saveHighlights, saveReadingPosition } from '@/app/(frontend)/book-actions'
 import { Toast, useToastTimeout, type ToastMessage } from '@/components/Toast'
-import { percentOf, type Bookmark, type BookSummary } from '@/lib/books'
+import { HIGHLIGHT_COLORS, percentOf, type Bookmark, type BookSummary, type Highlight, type HighlightColor } from '@/lib/books'
 import { useResolvedTheme } from '@/lib/theme'
-import { ListenBar, useVoices } from './ListenBar'
+import { ListenBar, useVoices, type Sleep } from './ListenBar'
 import { cachedLocations, fetchBook, storeLocations } from './loadBook'
 import { ReadAloud, loadTtsPrefs, rankVoices, saveTtsPrefs, speechSupported, voiceKey, type ReadAloudState } from './readAloud'
 import { ContentsPanel, SettingsPanel, type TocEntry } from './ReaderPanels'
+import { trackSave } from './readingSync'
+import { SearchPanel, type SearchHit } from './SearchPanel'
+import { SelectionToolbar, type SelectionTarget } from './SelectionToolbar'
 import { guessLanguage } from './sentences'
 import { HORIZONTAL_CSS, bookCss, loadSettings, paletteOf, saveSettings, type ReaderSettings } from './settings'
 
-type Props = { book: BookSummary; bookmarks: Bookmark[] }
+type Props = { book: BookSummary; bookmarks: Bookmark[]; highlights: Highlight[] }
 
 type Phase = { kind: 'downloading'; progress: number | null } | { kind: 'opening' } | { kind: 'ready' } | { kind: 'error'; message: string }
 
 const SAVE_DELAY = 1500
 const CHROME_IDLE = 3500
 const STYLE_KEY = 'pos-reader'
+const SEARCH_FLASH_MS = 2200
+
+const highlightHex = (color: HighlightColor) => HIGHLIGHT_COLORS.find((c) => c.value === color)?.hex ?? HIGHLIGHT_COLORS[0].hex
+const newId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
 const cfiCompare = new EpubCFI()
 
 const hrefPath = (href: string) => href.split('#')[0]
@@ -90,7 +98,7 @@ function forceHorizontal(book: Book) {
   })
 }
 
-export default function Reader({ book: info, bookmarks: initialBookmarks }: Props) {
+export default function Reader({ book: info, bookmarks: initialBookmarks, highlights: initialHighlights }: Props) {
   const appTheme = useResolvedTheme()
   const [settings, setSettings] = useState<ReaderSettings>(loadSettings)
   const palette = paletteOf(settings.theme, appTheme)
@@ -104,10 +112,13 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
   const [location, setLocation] = useState<Location | null>(null)
   const [toc, setToc] = useState<TocEntry[]>([])
   const [locationsReady, setLocationsReady] = useState(false)
-  const [panel, setPanel] = useState<'toc' | 'settings' | null>(null)
+  const [panel, setPanel] = useState<'toc' | 'settings' | 'search' | null>(null)
+  const [contentsTab, setContentsTab] = useState<'toc' | 'bookmarks' | 'highlights'>('toc')
   const [chrome, setChrome] = useState(true)
   const [scrub, setScrub] = useState<number | null>(null)
   const [bookmarks, setBookmarks] = useState(initialBookmarks)
+  const [highlights, setHighlights] = useState(initialHighlights)
+  const [target, setTarget] = useState<SelectionTarget | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const clearToast = useCallback(() => setToast(null), [])
@@ -119,10 +130,13 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
   const [lang, setLang] = useState(info.language || '')
   const voices = useVoices()
   const [ttsPrefs, setTtsPrefs] = useState(loadTtsPrefs)
+  const [sleep, setSleep] = useState<Sleep>({ mode: 'off' })
   const ttsRef = useRef<ReadAloud | null>(null)
   const selectionRef = useRef<{ cfi: string; contents: Contents } | null>(null)
 
   const cfiRef = useRef<string | null>(info.cfi)
+  // Reaching the last page says so once (the server marks the book read).
+  const endedRef = useRef(Boolean(info.finishedAt))
   const chromeTimer = useRef<number | undefined>(undefined)
   const panelRef = useRef(panel)
   useEffect(() => {
@@ -172,8 +186,37 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
   const currentCss = useEffectEvent(() => css)
   const onRelocated = useEffectEvent((loc: Location) => {
     setLocation(loc)
+    setTarget(null)
     cfiRef.current = loc.start.cfi
     ttsRef.current?.relocated(loc)
+    if (loc.atEnd && !endedRef.current) {
+      endedRef.current = true
+      setToast({ text: '讀完了！已標記為讀完', tone: 'info' })
+    }
+  })
+  // Selected text: offer highlight colours, a note, read aloud or copy.
+  const onSelected = useEffectEvent((cfi: string, contents: Contents) => {
+    selectionRef.current = { cfi, contents }
+    const sel = contents.window?.getSelection()
+    const text = sel?.toString().trim()
+    const frame = (contents.window?.frameElement as HTMLElement | null)?.getBoundingClientRect()
+    if (!sel || !sel.rangeCount || !text || !frame) return
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    setTarget({
+      kind: 'new',
+      cfi,
+      text: text.replace(/\s+/g, ' ').slice(0, 1000),
+      x: frame.left + rect.left + rect.width / 2,
+      top: frame.top + rect.top,
+      bottom: frame.top + rect.bottom,
+    })
+  })
+  // The sleep timer set to 這章念完: stop here, once.
+  const continueAfterChapter = useEffectEvent(() => {
+    if (sleep.mode !== 'chapter') return true
+    setSleep({ mode: 'off' })
+    setToast({ text: '這章念完了，朗讀已暫停', tone: 'info' })
+    return false
   })
 
   // ---- lay it out (again when the flow or writing direction changes) ----
@@ -200,9 +243,7 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
     let disposed = false
     r.display(cfiRef.current ?? undefined).catch(() => (disposed ? undefined : r.display()))
     r.on('relocated', (loc: Location) => !disposed && onRelocated(loc))
-    r.on('selected', (cfi: string, contents: Contents) => {
-      selectionRef.current = { cfi, contents }
-    })
+    r.on('selected', (cfi: string, contents: Contents) => !disposed && onSelected(cfi, contents))
     r.on('displayed', () => !disposed && setPhase({ kind: 'ready' }))
     setRendition(r)
 
@@ -211,6 +252,7 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
       book,
       onState: (s) => !disposed && setTtsState(s),
       onError: (message) => !disposed && setToast({ text: message, tone: 'error' }),
+      continueAfterChapter: () => continueAfterChapter(),
     })
     ttsRef.current = tts
 
@@ -287,7 +329,7 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
     const p = pending.current
     if (!p) return
     pending.current = null
-    void saveReadingPosition(info.id, p.cfi, p.progress)
+    trackSave(saveReadingPosition(info.id, p.cfi, p.progress))
   })
   useEffect(() => {
     const cfi = location?.start?.cfi
@@ -337,9 +379,15 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
   // Keys work whether focus is on the page or inside the book's frame.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      setPanel('search')
+      return
+    }
     if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
     if (e.key === 'Escape') {
-      if (panelRef.current) setPanel(null)
+      if (target) setTarget(null)
+      else if (panelRef.current) setPanel(null)
       else setChrome((c) => !c)
     } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
       e.preventDefault()
@@ -375,7 +423,20 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
     const frame = (e.view as Window | null)?.frameElement
     const box = viewerRef.current?.getBoundingClientRect()
     if (!frame || !box) return
-    const x = frame.getBoundingClientRect().left + e.clientX
+    const frameBox = frame.getBoundingClientRect()
+    const x = frameBox.left + e.clientX
+    const y = frameBox.top + e.clientY
+    // A tap on a highlight opens its toolbar (onHighlightTap) and does nothing else.
+    const onMark = [...document.querySelectorAll('.pos-hl rect')].some((r) => {
+      const b = r.getBoundingClientRect()
+      return x >= b.left && x <= b.right && y >= b.top && y <= b.bottom
+    })
+    if (onMark) return
+    // Elsewhere, a tap first just closes an open toolbar.
+    if (target) {
+      setTarget(null)
+      return
+    }
     const ratio = (x - box.left) / box.width
     if (settings.flow === 'paginated' && ratio < 0.22) goLeft()
     else if (settings.flow === 'paginated' && ratio > 0.78) goRight()
@@ -455,6 +516,98 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
     setToast({ text: '已加入書籤', tone: 'info' })
   }
 
+  // ---- highlights ----
+  // epub.js passes on a copy of the tap without its position, so the toolbar goes by the mark itself.
+  const onHighlightTap = useEffectEvent((id: string) => {
+    const highlight = highlights.find((h) => h.id === id)
+    const box = document.querySelector(`.pos-hl[data-id="${CSS.escape(id)}"]`)?.getBoundingClientRect()
+    if (!highlight || !box) return
+    setTarget({ kind: 'existing', highlight, x: box.left + box.width / 2, top: box.top, bottom: box.bottom })
+  })
+  // epub.js draws highlights over the page; redraw them all when the list,
+  // the layout or the light/dark look changes.
+  useEffect(() => {
+    if (!rendition) return
+    const dark = palette.scheme === 'dark'
+    const drawn: string[] = []
+    for (const h of highlights) {
+      rendition.annotations.highlight(h.cfi, { id: h.id }, () => onHighlightTap(h.id), 'pos-hl', {
+        fill: highlightHex(h.color),
+        'fill-opacity': dark ? '0.3' : '0.38',
+        'mix-blend-mode': dark ? 'normal' : 'multiply',
+      })
+      drawn.push(h.cfi)
+    }
+    return () => drawn.forEach((cfi) => rendition.annotations.remove(cfi, 'highlight'))
+  }, [rendition, highlights, palette.scheme])
+
+  const persistHighlights = (list: Highlight[]) => {
+    const before = highlights
+    setHighlights(list)
+    void saveHighlights(info.id, list).then((r) => {
+      if (!r.ok) {
+        setHighlights(before)
+        setToast({ text: r.error, tone: 'error' })
+      }
+    })
+  }
+  const clearSelection = () => {
+    selectionRef.current?.contents.window?.getSelection()?.removeAllRanges()
+    selectionRef.current = null
+  }
+  const addHighlight = (color: HighlightColor, note = '') => {
+    if (target?.kind !== 'new') return
+    const highlight: Highlight = { id: newId(), cfi: target.cfi, text: target.text, color, note, createdAt: new Date().toISOString() }
+    persistHighlights([...highlights, highlight].sort((a, b) => cfiCompare.compare(a.cfi, b.cfi)))
+    clearSelection()
+    setTarget(null)
+  }
+  const changeHighlight = (id: string, patch: Partial<Highlight>) => {
+    persistHighlights(highlights.map((h) => (h.id === id ? { ...h, ...patch } : h)))
+    setTarget(null)
+  }
+  const removeHighlight = (id: string) => {
+    persistHighlights(highlights.filter((h) => h.id !== id))
+    setTarget(null)
+  }
+  const copy = (text: string, message = '已複製') => {
+    void navigator.clipboard?.writeText(text).then(
+      () => setToast({ text: message, tone: 'info' }),
+      () => setToast({ text: '無法複製', tone: 'error' }),
+    )
+  }
+  const copyHighlights = () => {
+    const body = highlights.map((h) => `> ${h.text}${h.note ? `\n\n${h.note}` : ''}`).join('\n\n---\n\n')
+    copy(`# ${info.title}${info.author ? `\n\n${info.author}` : ''}\n\n${body}\n`, `已複製 ${highlights.length} 則劃線`)
+  }
+
+  // ---- search: jump there and flash the match ----
+  const flashTimer = useRef<number | undefined>(undefined)
+  const goToHit = (hit: SearchHit) => {
+    if (!rendition) return
+    if (window.matchMedia('(max-width: 767px)').matches) setPanel(null)
+    void rendition.display(hit.cfi).then(() => {
+      window.clearTimeout(flashTimer.current)
+      rendition.annotations.highlight(hit.cfi, {}, undefined, 'pos-search', { fill: palette.link, 'fill-opacity': '0.3' })
+      flashTimer.current = window.setTimeout(() => rendition.annotations.remove(hit.cfi, 'highlight'), SEARCH_FLASH_MS)
+    })
+  }
+  useEffect(() => () => window.clearTimeout(flashTimer.current), [])
+
+  // ---- sleep timer ----
+  useEffect(() => {
+    if (sleep.mode !== 'time') return
+    const timer = window.setTimeout(
+      () => {
+        ttsRef.current?.pause()
+        setSleep({ mode: 'off' })
+        setToast({ text: `${sleep.minutes} 分鐘到了，朗讀已暫停`, tone: 'info' })
+      },
+      Math.max(0, sleep.until - Date.now()),
+    )
+    return () => window.clearTimeout(timer)
+  }, [sleep])
+
   // ---- read aloud ----
   useEffect(() => {
     const tts = ttsRef.current
@@ -465,10 +618,14 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
     tts.refresh()
   }, [voice, ttsPrefs.rate, effectiveLang, rendition])
 
-  const play = () => {
+  const play = (fromCfi?: string) => {
     const tts = ttsRef.current
     if (!tts) return
     tts.unlock()
+    if (fromCfi) {
+      clearSelection()
+      return void tts.start(fromCfi)
+    }
     if (tts.current === 'paused') return tts.resume()
     // A selection made in the last moment: start reading there.
     const sel = selectionRef.current
@@ -477,18 +634,20 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
     sel?.contents.window?.getSelection()?.removeAllRanges()
     void tts.start(fromSelection)
   }
-  const openListen = () => {
+  const openListen = (fromCfi?: string) => {
     if (!speechSupported()) {
       setToast({ text: '這個瀏覽器不支援朗讀', tone: 'error' })
       return
     }
     setListening(true)
     setPanel(null)
-    play()
+    setTarget(null)
+    play(fromCfi)
   }
   const closeListen = () => {
     ttsRef.current?.stop()
     setListening(false)
+    setSleep({ mode: 'off' })
   }
   const updateTts = (patch: { rate?: number; voice?: SpeechSynthesisVoice }) => {
     setTtsPrefs((p) => {
@@ -543,8 +702,18 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
           <p className="truncate text-[11px] text-[var(--r-muted)]">{chapter?.item.label.trim() || info.author || ' '}</p>
         </div>
         <div className="flex items-center">
-          <IconButton label="目錄與書籤" onClick={() => setPanel(panel === 'toc' ? null : 'toc')} active={panel === 'toc'}>
+          <IconButton
+            label="目錄、書籤與劃線"
+            onClick={() => {
+              setContentsTab('toc')
+              setPanel(panel === 'toc' ? null : 'toc')
+            }}
+            active={panel === 'toc'}
+          >
             <ListBullets size={19} />
+          </IconButton>
+          <IconButton label="搜尋全書（Ctrl F）" onClick={() => setPanel(panel === 'search' ? null : 'search')} active={panel === 'search'} disabled={!book}>
+            <MagnifyingGlass size={19} />
           </IconButton>
           <IconButton label={pageBookmark ? '移除書籤' : '加入書籤'} onClick={toggleBookmark} active={Boolean(pageBookmark)} disabled={!location}>
             <BookmarkSimple size={19} weight={pageBookmark ? 'fill' : 'regular'} className={pageBookmark ? 'text-[var(--r-accent)]' : ''} />
@@ -632,16 +801,41 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
           voices={voices}
           voice={voice}
           rate={ttsPrefs.rate}
-          onPlay={play}
+          onPlay={() => play()}
           onPause={() => ttsRef.current?.pause()}
           onSkip={(d) => ttsRef.current?.skip(d)}
           onRate={(rate) => updateTts({ rate })}
           onVoice={(v) => updateTts({ voice: v })}
+          sleep={sleep}
+          onSleep={setSleep}
           onClose={closeListen}
         />
       )}
 
+      {target && (
+        <SelectionToolbar
+          key={target.kind === 'existing' ? target.highlight.id : target.cfi}
+          target={target}
+          onColor={(color) => (target.kind === 'new' ? addHighlight(color) : changeHighlight(target.highlight.id, { color }))}
+          onNote={(note) => (target.kind === 'new' ? addHighlight('yellow', note) : changeHighlight(target.highlight.id, { note }))}
+          onCopy={() => {
+            copy(target.kind === 'new' ? target.text : target.highlight.text)
+            setTarget(null)
+          }}
+          onListen={target.kind === 'new' ? () => openListen(target.cfi) : undefined}
+          onDelete={target.kind === 'existing' ? () => removeHighlight(target.highlight.id) : undefined}
+        />
+      )}
+
       {panel === 'settings' && <SettingsPanel settings={settings} onChange={changeSettings} onClose={() => setPanel(null)} />}
+      {panel === 'search' && book && (
+        <SearchPanel
+          book={book}
+          chapterLabel={(index) => chapterOf(toc, index)?.item.label.trim() || `第 ${index + 1} 部分`}
+          onGo={goToHit}
+          onClose={() => setPanel(null)}
+        />
+      )}
       {panel === 'toc' && (
         <ContentsPanel
           title={info.title}
@@ -649,8 +843,12 @@ export default function Reader({ book: info, bookmarks: initialBookmarks }: Prop
           toc={toc}
           activeHref={chapter?.item.href ?? null}
           bookmarks={bookmarks}
+          highlights={highlights}
+          initialTab={contentsTab}
           onGo={go}
           onRemoveBookmark={(cfi) => persistBookmarks(bookmarks.filter((b) => b.cfi !== cfi))}
+          onRemoveHighlight={removeHighlight}
+          onCopyHighlights={copyHighlights}
           onClose={() => setPanel(null)}
         />
       )}

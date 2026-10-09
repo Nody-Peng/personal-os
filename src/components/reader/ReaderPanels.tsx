@@ -1,9 +1,9 @@
 'use client'
 
-import { BookmarkSimple, Minus, Plus, Trash, X } from '@phosphor-icons/react'
+import { BookmarkSimple, Copy, Highlighter, Minus, Plus, Trash, X } from '@phosphor-icons/react'
 import type { NavItem } from 'epubjs'
 import { useState } from 'react'
-import type { Bookmark } from '@/lib/books'
+import { HIGHLIGHT_COLORS, type Bookmark, type Highlight } from '@/lib/books'
 import {
   FONT_OPTIONS,
   FONT_SIZES,
@@ -194,8 +194,12 @@ export function ContentsPanel({
   toc,
   activeHref,
   bookmarks,
+  highlights,
+  initialTab = 'toc',
   onGo,
   onRemoveBookmark,
+  onRemoveHighlight,
+  onCopyHighlights,
   onClose,
 }: {
   title: string
@@ -203,11 +207,15 @@ export function ContentsPanel({
   toc: TocEntry[]
   activeHref: string | null
   bookmarks: Bookmark[]
+  highlights: Highlight[]
+  initialTab?: 'toc' | 'bookmarks' | 'highlights'
   onGo: (target: string) => void
   onRemoveBookmark: (cfi: string) => void
+  onRemoveHighlight: (id: string) => void
+  onCopyHighlights: () => void
   onClose: () => void
 }) {
-  const [tab, setTab] = useState<'toc' | 'bookmarks'>('toc')
+  const [tab, setTab] = useState<'toc' | 'bookmarks' | 'highlights'>(initialTab)
   return (
     <>
       <button type="button" aria-label="關閉目錄" onClick={onClose} className="modal-scrim fixed inset-0 z-40 bg-black/25" />
@@ -226,10 +234,11 @@ export function ContentsPanel({
         </header>
         <div className="px-5 pb-3">
           <Segmented
-            label="目錄或書籤"
+            label="目錄、書籤或劃線"
             options={[
               { value: 'toc', label: '目錄' },
               { value: 'bookmarks', label: bookmarks.length ? `書籤 ${bookmarks.length}` : '書籤' },
+              { value: 'highlights', label: highlights.length ? `劃線 ${highlights.length}` : '劃線' },
             ]}
             value={tab}
             onChange={setTab}
@@ -262,6 +271,8 @@ export function ContentsPanel({
             ) : (
               <p className="px-3 py-8 text-center text-sm text-[var(--r-muted)]">這本書沒有目錄</p>
             )
+          ) : tab === 'highlights' ? (
+            <HighlightList highlights={highlights} onGo={onGo} onRemove={onRemoveHighlight} onCopy={onCopyHighlights} />
           ) : bookmarks.length ? (
             <ul>
               {bookmarks.map((b) => (
@@ -295,6 +306,61 @@ export function ContentsPanel({
           )}
         </div>
       </aside>
+    </>
+  )
+}
+
+const hexOf = (color: string) => HIGHLIGHT_COLORS.find((c) => c.value === color)?.hex ?? HIGHLIGHT_COLORS[0].hex
+
+function HighlightList({
+  highlights,
+  onGo,
+  onRemove,
+  onCopy,
+}: {
+  highlights: Highlight[]
+  onGo: (target: string) => void
+  onRemove: (id: string) => void
+  onCopy: () => void
+}) {
+  if (!highlights.length) {
+    return (
+      <div className="px-6 py-10 text-center">
+        <Highlighter size={28} className="mx-auto text-[var(--r-muted)]" />
+        <p className="mt-3 text-sm">還沒有劃線</p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--r-muted)]">選取書裡的文字，挑一個顏色就能劃線，也可以加上筆記</p>
+      </div>
+    )
+  }
+  return (
+    <>
+      <div className="flex justify-end px-2 pb-1">
+        <button type="button" onClick={onCopy} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--r-muted)] hover:bg-[var(--r-sunken)] hover:text-[var(--r-ink)]">
+          <Copy size={13} />
+          複製全部（Markdown）
+        </button>
+      </div>
+      <ul className="grid gap-1">
+        {highlights.map((h) => (
+          <li key={h.id} className="group relative rounded-md hover:bg-[var(--r-sunken)]">
+            <button type="button" onClick={() => onGo(h.cfi)} className="flex w-full gap-3 px-3 py-2.5 pr-10 text-left">
+              <span className="w-[3px] shrink-0 self-stretch rounded-full" style={{ background: hexOf(h.color) }} aria-hidden />
+              <span className="min-w-0">
+                <span className="line-clamp-3 font-serif text-[14px] leading-relaxed">{h.text}</span>
+                {h.note && <span className="mt-1.5 block text-[12.5px] leading-relaxed text-[var(--r-muted)]">{h.note}</span>}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemove(h.id)}
+              aria-label="刪除劃線"
+              className="absolute top-2 right-1 rounded-md p-2 text-[var(--r-muted)] opacity-100 transition-opacity hover:text-[var(--r-ink)] md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+            >
+              <Trash size={15} />
+            </button>
+          </li>
+        ))}
+      </ul>
     </>
   )
 }

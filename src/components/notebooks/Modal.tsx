@@ -31,7 +31,9 @@ export function Modal({ title, onClose, children, size = 'md', hideTitle = false
     document.addEventListener('keydown', onKey)
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    panel.current?.querySelector<HTMLElement>('[data-autofocus], input, button')?.focus()
+    // A marked field first; otherwise the first control (the header's close button comes before the body).
+    const root = panel.current
+    ;(root?.querySelector<HTMLElement>('[data-autofocus]') ?? root?.querySelector<HTMLElement>('input, button'))?.focus()
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = overflow

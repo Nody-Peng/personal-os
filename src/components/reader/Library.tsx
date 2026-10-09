@@ -1,75 +1,75 @@
 'use client'
 
 import {
-  ArrowRight,
-  BookOpenText,
+  Check,
   CheckCircle,
-  CircleNotch,
+  Checks,
   DotsThree,
+  FolderSimplePlus,
   MagnifyingGlass,
   PencilSimple,
   Plus,
+  SlidersHorizontal,
+  SortAscending,
+  Tag,
   Trash,
   UploadSimple,
-  WarningCircle,
   X,
 } from '@phosphor-icons/react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { deleteBook, renameBook } from '@/app/(frontend)/book-actions'
+import { deleteBooks, moveBooksShelf, setBooksFinished } from '@/app/(frontend)/book-actions'
 import { BookLink } from '@/components/books/BookOpener'
-import { Menu } from '@/components/notebooks/Menu'
+import { Menu, type MenuItem } from '@/components/notebooks/Menu'
 import { Modal } from '@/components/notebooks/Modal'
 import { Toast, useToastTimeout, type ToastMessage } from '@/components/Toast'
-import { percentOf, type BookSummary } from '@/lib/books'
+import { READING_STATUSES, statusOf, type BookSummary, type ReadingStatus, type Shelf } from '@/lib/books'
 import { EbookCover } from './EbookCover'
 import { bookKey, importEpub } from './importEpub'
+import { ContinueReading, EditBook, EmptyLibrary, ImportPanel, ShelfProgress, type Job } from './LibraryParts'
 import { forgetBook } from './loadBook'
+import { afterReaderSaves } from './readingSync'
+import { ManageShelves, ShelfPicker } from './ShelfDialogs'
 
 type Sort = 'recent' | 'added' | 'title'
-type Stage = 'waiting' | 'reading' | 'cover' | 'uploading' | 'done' | 'skipped' | 'error'
-type Job = { key: string; file: File; stage: Stage; error?: string }
+type ShelfFilter = number | 'all'
 
-const STAGE_TEXT: Record<Stage, string> = {
-  waiting: '排隊中',
-  reading: '讀取書名和封面',
-  cover: '上傳封面',
-  uploading: '上傳中',
-  done: '已加入',
-  skipped: '書庫裡已經有了',
-  error: '失敗',
-}
+const SORTS: { value: Sort; label: string }[] = [
+  { value: 'recent', label: '最近閱讀' },
+  { value: 'added', label: '最近加入' },
+  { value: 'title', label: '書名' },
+]
 
-const isFinished = (b: BookSummary) => b.progress >= 0.995
+const time = (iso: string | null) => (iso ? Date.parse(iso) : 0)
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - Date.parse(iso)
-  const min = Math.round(diff / 60_000)
-  if (min < 2) return '剛剛'
-  if (min < 60) return `${min} 分鐘前`
-  const hours = Math.round(min / 60)
-  if (hours < 24) return `${hours} 小時前`
-  const days = Math.round(hours / 24)
-  if (days < 30) return `${days} 天前`
-  return new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' })
-}
-
-function sizeText(bytes: number | null) {
-  if (!bytes) return ''
-  return bytes > 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`
-}
-
-export function Library({ books }: { books: BookSummary[] }) {
+export function Library({ books, shelves, initialShelf }: { books: BookSummary[]; shelves: Shelf[]; initialShelf: number | null }) {
   const router = useRouter()
+  const [shelf, setShelf] = useState<ShelfFilter>(initialShelf && shelves.some((s) => s.id === initialShelf) ? initialShelf : 'all')
+  const [status, setStatus] = useState<ReadingStatus | 'all'>('all')
   const [sort, setSort] = useState<Sort>('recent')
   const [query, setQuery] = useState('')
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(() => new Set())
   const [jobs, setJobs] = useState<Job[]>([])
   const [dragging, setDragging] = useState(false)
   const [editing, setEditing] = useState<BookSummary | null>(null)
-  const [deleting, setDeleting] = useState<BookSummary | null>(null)
+  const [deleting, setDeleting] = useState<BookSummary[] | null>(null)
+  const [picking, setPicking] = useState<BookSummary | null>(null)
+  const [managing, setManaging] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
-  useToastTimeout(toast, useCallback(() => setToast(null), []))
+  const clearToast = useCallback(() => setToast(null), [])
+  useToastTimeout(toast, clearToast)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  // Back from the reader: show the place just saved.
+  useEffect(() => afterReaderSaves(() => router.refresh()), [router])
+
+  const activeShelf = shelf === 'all' ? null : (shelves.find((s) => s.id === shelf) ?? null)
+  const chooseShelf = (next: ShelfFilter) => {
+    setShelf(next)
+    setSelected(new Set())
+    window.history.replaceState(null, '', next === 'all' ? '/books' : `/books?shelf=${next}`)
+  }
 
   // ---- importing ----
   const known = useRef(new Set<string>())
@@ -77,7 +77,7 @@ export function Library({ books }: { books: BookSummary[] }) {
     known.current = new Set(books.map((b) => bookKey(b.title, b.author)))
   }, [books])
   const running = useRef(false)
-  const queue = useRef<Job[]>([])
+  const queue = useRef<{ job: Job; shelves: number[] }[]>([])
 
   const update = (key: string, patch: Partial<Job>) => setJobs((all) => all.map((j) => (j.key === key ? { ...j, ...patch } : j)))
 
@@ -86,8 +86,8 @@ export function Library({ books }: { books: BookSummary[] }) {
     running.current = true
     let added = 0
     // One at a time: parsing an EPUB holds it in memory, and uploads share the line.
-    for (let job = queue.current.shift(); job; job = queue.current.shift()) {
-      const { key, file } = job
+    for (let next = queue.current.shift(); next; next = queue.current.shift()) {
+      const { key, file } = next.job
       // Claimed before the upload, so the same book twice in one batch is added once.
       let claimed: string | null = null
       const exists = (k: string) => {
@@ -97,7 +97,7 @@ export function Library({ books }: { books: BookSummary[] }) {
         return false
       }
       try {
-        const result = await importEpub(file, (stage) => update(key, { stage }), exists)
+        const result = await importEpub(file, (stage) => update(key, { stage }), exists, next.shelves)
         if (result) {
           added++
           update(key, { stage: 'done' })
@@ -114,14 +114,21 @@ export function Library({ books }: { books: BookSummary[] }) {
     if (added) setToast({ text: `加入了 ${added} 本書`, tone: 'info' })
   }, [router])
 
+  const shelfRef = useRef<ShelfFilter>(shelf)
+  useEffect(() => {
+    shelfRef.current = shelf
+  }, [shelf])
+
   const addFiles = useCallback(
     (files: FileList | File[]) => {
       const list = [...files].filter((f) => /\.epub$/i.test(f.name) || f.type === 'application/epub+zip')
       const ignored = files.length - list.length
       if (ignored) setToast({ text: `略過 ${ignored} 個不是 EPUB 的檔案`, tone: 'error' })
       if (!list.length) return
+      // Books dropped while a category is open go into it.
+      const into = shelfRef.current === 'all' ? [] : [shelfRef.current]
       const newJobs = list.map<Job>((file, i) => ({ key: `${Date.now()}-${i}-${file.name}`, file, stage: 'waiting' }))
-      queue.current.push(...newJobs)
+      queue.current.push(...newJobs.map((job) => ({ job, shelves: into })))
       setJobs((all) => [...all.filter((j) => j.stage !== 'done' && j.stage !== 'skipped'), ...newJobs])
       void runQueue()
     },
@@ -163,33 +170,80 @@ export function Library({ books }: { books: BookSummary[] }) {
   }, [addFiles])
 
   // ---- shelf ----
+  const counts = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const b of books) for (const s of b.shelves) map.set(s, (map.get(s) ?? 0) + 1)
+    return map
+  }, [books])
+
   const current = useMemo(
     () =>
       books
-        .filter((b) => b.lastReadAt && !isFinished(b))
-        .sort((a, b) => Date.parse(b.lastReadAt!) - Date.parse(a.lastReadAt!))[0] ?? null,
+        .filter((b) => statusOf(b) === 'reading')
+        .sort((a, b) => time(b.lastReadAt) - time(a.lastReadAt))[0] ?? null,
     [books],
   )
 
-  const shelf = useMemo(() => {
+  const inShelf = useMemo(() => (shelf === 'all' ? books : books.filter((b) => b.shelves.includes(shelf))), [books, shelf])
+
+  const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const list = q ? books.filter((b) => `${b.title} ${b.author ?? ''}`.toLowerCase().includes(q)) : [...books]
+    const list = inShelf.filter(
+      (b) => (status === 'all' || statusOf(b) === status) && (!q || `${b.title} ${b.author ?? ''}`.toLowerCase().includes(q)),
+    )
     if (sort === 'title') list.sort((a, b) => a.title.localeCompare(b.title, 'zh-Hant'))
-    else if (sort === 'added') list.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    else list.sort((a, b) => Date.parse(b.lastReadAt ?? b.createdAt) - Date.parse(a.lastReadAt ?? a.createdAt))
+    else if (sort === 'added') list.sort((a, b) => time(b.createdAt) - time(a.createdAt))
+    else list.sort((a, b) => (time(b.lastReadAt) || time(b.createdAt)) - (time(a.lastReadAt) || time(a.createdAt)))
     return list
-  }, [books, query, sort])
+  }, [inShelf, query, sort, status])
 
-  const finished = books.filter(isFinished).length
   const busy = jobs.some((j) => j.stage !== 'done' && j.stage !== 'skipped' && j.stage !== 'error')
+  const finishedCount = books.filter((b) => statusOf(b) === 'finished').length
 
-  const remove = async (book: BookSummary) => {
+  // ---- actions ----
+  const done = (r: { ok: boolean; error?: string }, message?: string) => {
+    if (!r.ok) setToast({ text: r.error ?? '發生錯誤', tone: 'error' })
+    else {
+      if (message) setToast({ text: message, tone: 'info' })
+      router.refresh()
+    }
+    return r.ok
+  }
+
+  const remove = async (list: BookSummary[]) => {
     setDeleting(null)
-    const r = await deleteBook(book.id)
-    if (!r.ok) return setToast({ text: r.error, tone: 'error' })
-    void forgetBook(book.url)
-    setToast({ text: `已刪除《${book.title}》`, tone: 'info' })
-    router.refresh()
+    const ok = done(await deleteBooks(list.map((b) => b.id)), list.length === 1 ? `已刪除《${list[0].title}》` : `已刪除 ${list.length} 本書`)
+    if (!ok) return
+    for (const b of list) void forgetBook(b.url)
+    setSelected(new Set())
+  }
+
+  const toggleSelected = (id: number) =>
+    setSelected((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const stopSelecting = () => {
+    setSelecting(false)
+    setSelected(new Set())
+  }
+  const selectedBooks = books.filter((b) => selected.has(b.id))
+
+  const bookMenu = (book: BookSummary): MenuItem[] => {
+    const s = statusOf(book)
+    return [
+      { label: '分類', icon: <Tag size={16} />, onSelect: () => setPicking(book) },
+      { label: '編輯書名和作者', icon: <PencilSimple size={16} />, onSelect: () => setEditing(book) },
+      s === 'finished'
+        ? { label: '重設進度（從頭讀）', icon: <X size={16} />, onSelect: () => void setBooksFinished([book.id], false).then((r) => done(r, '已重設進度')) }
+        : { label: '標記為讀完', icon: <CheckCircle size={16} />, onSelect: () => void setBooksFinished([book.id], true).then((r) => done(r, '已標記為讀完')) },
+      ...(s === 'reading'
+        ? [{ label: '重設進度（從頭讀）', icon: <X size={16} />, onSelect: () => void setBooksFinished([book.id], false).then((r) => done(r, '已重設進度')) }]
+        : []),
+      { label: '刪除', icon: <Trash size={16} />, danger: true, onSelect: () => setDeleting([book]) },
+    ]
   }
 
   const picker = (
@@ -212,7 +266,7 @@ export function Library({ books }: { books: BookSummary[] }) {
       <header className="mb-10 flex flex-wrap items-end justify-between gap-x-6 gap-y-4 md:mb-14">
         <div>
           <p className="font-mono text-xs text-muted">
-            {books.length ? `${books.length} 本書 · 讀完 ${finished} 本` : '把 EPUB 放進來，在哪都能接著讀'}
+            {books.length ? `${books.length} 本書 · 讀完 ${finishedCount} 本` : '把 EPUB 放進來，在哪都能接著讀'}
           </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink-strong md:text-4xl">閱讀</h1>
         </div>
@@ -228,15 +282,37 @@ export function Library({ books }: { books: BookSummary[] }) {
         <EmptyLibrary onPick={() => fileInput.current?.click()} />
       ) : (
         <>
-          {current && <ContinueReading book={current} />}
+          {current && shelf === 'all' && !selecting && <ContinueReading book={current} />}
 
           <section aria-labelledby="shelf-heading">
-            <div className="mb-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+            {/* Categories */}
+            <nav aria-label="分類" className="-mx-4 mb-5 flex items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-wrap md:px-0">
+              <ShelfChip active={shelf === 'all'} count={books.length} onClick={() => chooseShelf('all')}>
+                全部
+              </ShelfChip>
+              {shelves.map((s) => (
+                <ShelfChip key={s.id} active={shelf === s.id} count={counts.get(s.id) ?? 0} onClick={() => chooseShelf(s.id)}>
+                  {s.name}
+                </ShelfChip>
+              ))}
+              <button
+                type="button"
+                onClick={() => setManaging(true)}
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-dashed border-line-strong px-3 text-[13px] text-muted transition-colors hover:border-ink-strong/40 hover:text-ink-strong"
+              >
+                {shelves.length ? <SlidersHorizontal size={14} /> : <FolderSimplePlus size={14} />}
+                {shelves.length ? '管理分類' : '新增分類'}
+              </button>
+            </nav>
+
+            {/* Filters */}
+            <div className="mb-8 flex flex-wrap items-center gap-x-3 gap-y-3">
               <h2 id="shelf-heading" className="mr-auto text-xl font-semibold tracking-tight text-ink-strong">
-                書庫
+                {activeShelf?.name ?? '書庫'}
+                <span className="ml-2 font-mono text-xs font-normal text-muted">{visible.length}</span>
               </h2>
-              {books.length > 8 && (
-                <label className="relative flex w-full items-center sm:w-56">
+              {inShelf.length > 8 && (
+                <label className="relative flex w-full items-center sm:w-52">
                   <MagnifyingGlass size={15} className="pointer-events-none absolute left-3 text-muted" />
                   <input
                     type="search"
@@ -248,62 +324,172 @@ export function Library({ books }: { books: BookSummary[] }) {
                   />
                 </label>
               )}
-              <div role="radiogroup" aria-label="排序" className="flex gap-1 rounded-lg bg-sunken p-1">
-                {(
-                  [
-                    ['recent', '最近閱讀'],
-                    ['added', '最近加入'],
-                    ['title', '書名'],
-                  ] as const
-                ).map(([value, label]) => (
+              <div role="radiogroup" aria-label="閱讀狀態" className="flex gap-1 rounded-lg bg-sunken p-1">
+                {[{ value: 'all' as const, label: '全部' }, ...READING_STATUSES].map((o) => (
                   <button
-                    key={value}
+                    key={o.value}
                     type="button"
                     role="radio"
-                    aria-checked={sort === value}
-                    onClick={() => setSort(value)}
-                    className={`h-7 rounded-md px-3 text-[13px] transition-colors ${
-                      sort === value ? 'bg-surface font-medium text-ink-strong shadow-[0_0_0_1px_var(--color-line)]' : 'text-muted hover:text-ink-strong'
+                    aria-checked={status === o.value}
+                    onClick={() => setStatus(o.value)}
+                    className={`h-7 rounded-md px-2.5 text-[13px] transition-colors ${
+                      status === o.value ? 'bg-surface font-medium text-ink-strong shadow-[0_0_0_1px_var(--color-line)]' : 'text-muted hover:text-ink-strong'
                     }`}
                   >
-                    {label}
+                    {o.label}
                   </button>
                 ))}
               </div>
+              <Menu
+                label="排序"
+                className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-muted transition-colors hover:bg-sunken hover:text-ink-strong"
+                items={SORTS.map((o) => ({
+                  label: o.label,
+                  icon: o.value === sort ? <Check size={16} /> : <span className="inline-block w-4" />,
+                  onSelect: () => setSort(o.value),
+                }))}
+              >
+                <SortAscending size={16} />
+                <span className="hidden sm:inline">{SORTS.find((o) => o.value === sort)!.label}</span>
+              </Menu>
+              <button
+                type="button"
+                onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+                aria-pressed={selecting}
+                className={`flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] transition-colors ${
+                  selecting ? 'bg-ink-strong text-on-ink' : 'text-muted hover:bg-sunken hover:text-ink-strong'
+                }`}
+              >
+                <Checks size={16} />
+                {selecting ? '完成' : '選取'}
+              </button>
             </div>
 
-            {shelf.length ? (
+            {visible.length ? (
               <ul className="grid grid-cols-3 gap-x-4 gap-y-10 sm:grid-cols-4 sm:gap-x-6 md:grid-cols-5 lg:grid-cols-6">
-                {shelf.map((book, i) => (
-                  <li key={book.id} className="rise group/book min-w-0" style={{ '--i': Math.min(i, 18) } as CSSProperties}>
-                    <BookLink href={`/books/${book.id}`} label={`打開《${book.title}》`}>
-                      <EbookCover title={book.title} author={book.author} coverUrl={book.coverUrl} />
-                    </BookLink>
-                    <div className="mt-3 flex items-start gap-1">
-                      <div className="min-w-0 flex-1">
-                        <p className="line-clamp-2 text-[13px] leading-snug font-medium text-ink-strong">{book.title}</p>
-                        {book.author && <p className="mt-0.5 truncate text-xs text-muted">{book.author}</p>}
+                {visible.map((book, i) => {
+                  const isSelected = selected.has(book.id)
+                  return (
+                    <li key={book.id} className="rise group/book min-w-0" style={{ '--i': Math.min(i, 18) } as CSSProperties}>
+                      {selecting ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSelected(book.id)}
+                          aria-pressed={isSelected}
+                          aria-label={`選取《${book.title}》`}
+                          className="relative block w-full text-left"
+                        >
+                          <span className={`block transition-[transform,opacity] duration-200 ${isSelected ? 'scale-[0.94]' : 'opacity-80'}`}>
+                            <EbookCover title={book.title} author={book.author} coverUrl={book.coverUrl} />
+                          </span>
+                          <span
+                            className={`absolute top-2 right-2 grid size-6 place-items-center rounded-full border-2 shadow-sm transition-colors ${
+                              isSelected ? 'border-accent bg-accent text-on-ink' : 'border-white/90 bg-black/20'
+                            }`}
+                            aria-hidden
+                          >
+                            {isSelected && <CheckCircle size={22} weight="fill" />}
+                          </span>
+                        </button>
+                      ) : (
+                        <BookLink href={`/books/${book.id}`} label={`打開《${book.title}》`}>
+                          <EbookCover title={book.title} author={book.author} coverUrl={book.coverUrl} />
+                        </BookLink>
+                      )}
+                      <div className="mt-3 flex items-start gap-1">
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-[13px] leading-snug font-medium text-ink-strong">{book.title}</p>
+                          {book.author && <p className="mt-0.5 truncate text-xs text-muted">{book.author}</p>}
+                        </div>
+                        {!selecting && (
+                          <Menu
+                            label={`《${book.title}》的選項`}
+                            className="-mt-1 -mr-1.5 shrink-0 rounded-md p-1 text-muted opacity-100 transition-opacity hover:bg-sunken hover:text-ink-strong md:opacity-0 md:group-hover/book:opacity-100 md:focus-visible:opacity-100"
+                            items={bookMenu(book)}
+                          >
+                            <DotsThree size={18} weight="bold" />
+                          </Menu>
+                        )}
                       </div>
-                      <Menu
-                        label={`《${book.title}》的選項`}
-                        className="-mt-1 -mr-1.5 shrink-0 rounded-md p-1 text-muted opacity-100 transition-opacity hover:bg-sunken hover:text-ink-strong md:opacity-0 md:group-hover/book:opacity-100 md:focus-visible:opacity-100"
-                        items={[
-                          { label: '編輯書名和作者', icon: <PencilSimple size={16} />, onSelect: () => setEditing(book) },
-                          { label: '刪除', icon: <Trash size={16} />, danger: true, onSelect: () => setDeleting(book) },
-                        ]}
-                      >
-                        <DotsThree size={18} weight="bold" />
-                      </Menu>
-                    </div>
-                    <ShelfProgress book={book} />
-                  </li>
-                ))}
+                      <ShelfProgress book={book} />
+                    </li>
+                  )
+                })}
               </ul>
             ) : (
-              <p className="py-16 text-center text-sm text-muted">沒有符合「{query}」的書</p>
+              <div className="rounded-xl border border-dashed border-line-strong px-6 py-14 text-center">
+                {inShelf.length === 0 && activeShelf ? (
+                  <>
+                    <Tag size={24} className="mx-auto text-muted" />
+                    <p className="mt-3 text-sm font-medium text-ink-strong">「{activeShelf.name}」還沒有書</p>
+                    <p className="mt-1 text-sm text-muted">在這裡拖進 EPUB 會直接放進這個分類，也可以在書的選單裡選「分類」。</p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted">沒有符合的書</p>
+                )}
+              </div>
             )}
           </section>
         </>
+      )}
+
+      {selecting && (
+        <div className="sheet-in fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-40 flex items-center gap-1 overflow-x-auto rounded-2xl border border-line bg-surface p-1.5 shadow-[0_24px_60px_-24px_rgba(17,17,17,0.4)] md:inset-x-auto md:bottom-6 md:left-1/2 md:-translate-x-1/2">
+          <span className="shrink-0 px-3 text-sm font-medium text-ink-strong tabular-nums">已選 {selected.size} 本</span>
+          <button
+            type="button"
+            onClick={() => setSelected(selected.size === visible.length ? new Set() : new Set(visible.map((b) => b.id)))}
+            className="btn shrink-0 text-muted hover:bg-sunken"
+          >
+            {selected.size === visible.length && visible.length ? '全不選' : '全選'}
+          </button>
+          <span className="h-6 w-px shrink-0 bg-line" aria-hidden />
+          <Menu
+            label="加入分類"
+            className="btn shrink-0 text-ink hover:bg-sunken disabled:opacity-40"
+            items={[
+              ...shelves.map((s) => ({
+                label: s.name,
+                onSelect: () =>
+                  void moveBooksShelf([...selected], s.id, 'add').then((r) => done(r, `已把 ${selected.size} 本放進「${s.name}」`)),
+              })),
+              { label: '新增分類…', icon: <Plus size={16} />, onSelect: () => setManaging(true) },
+            ]}
+          >
+            <Tag size={16} />
+            加入分類
+          </Menu>
+          {activeShelf && (
+            <button
+              type="button"
+              disabled={!selected.size}
+              onClick={() =>
+                void moveBooksShelf([...selected], activeShelf.id, 'remove').then((r) => {
+                  if (done(r, `已移出「${activeShelf.name}」`)) setSelected(new Set())
+                })
+              }
+              className="btn shrink-0 text-ink hover:bg-sunken"
+            >
+              移出「{activeShelf.name}」
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!selected.size}
+            onClick={() => void setBooksFinished([...selected], true).then((r) => done(r, '已標記為讀完'))}
+            className="btn shrink-0 text-ink hover:bg-sunken"
+          >
+            <CheckCircle size={16} />
+            讀完
+          </button>
+          <button type="button" disabled={!selected.size} onClick={() => setDeleting(selectedBooks)} className="btn shrink-0 text-red-ink hover:bg-red-soft">
+            <Trash size={16} />
+            刪除
+          </button>
+          <button type="button" onClick={stopSelecting} aria-label="結束選取" className="btn shrink-0 text-muted hover:bg-sunken">
+            <X size={16} />
+          </button>
+        </div>
       )}
 
       {jobs.length > 0 && <ImportPanel jobs={jobs} busy={busy} onClose={() => setJobs([])} />}
@@ -313,7 +499,7 @@ export function Library({ books }: { books: BookSummary[] }) {
           <div className="pop-in grid w-full max-w-md place-items-center rounded-2xl border-2 border-dashed border-accent/60 bg-surface px-8 py-14 text-center">
             <UploadSimple size={32} className="text-accent" />
             <p className="mt-4 text-lg font-semibold text-ink-strong">放開來加入書庫</p>
-            <p className="mt-1 text-sm text-muted">可以一次拖很多本 EPUB</p>
+            <p className="mt-1 text-sm text-muted">{activeShelf ? `會放進「${activeShelf.name}」` : '可以一次拖很多本 EPUB'}</p>
           </div>
         </div>
       )}
@@ -328,11 +514,14 @@ export function Library({ books }: { books: BookSummary[] }) {
           }}
         />
       )}
+      {picking && <ShelfPicker book={picking} shelves={shelves} onClose={() => setPicking(null)} onChanged={() => router.refresh()} />}
+      {managing && <ManageShelves shelves={shelves} counts={counts} onClose={() => setManaging(false)} onChanged={() => router.refresh()} />}
       {deleting && (
-        <Modal title="刪除這本書？" onClose={() => setDeleting(null)}>
+        <Modal title={deleting.length === 1 ? '刪除這本書？' : `刪除 ${deleting.length} 本書？`} onClose={() => setDeleting(null)}>
           <div className="p-5">
             <p className="text-sm text-ink">
-              《{deleting.title}》的檔案、閱讀進度和書籤都會一起刪掉，不能復原。
+              {deleting.length === 1 ? `《${deleting[0].title}》` : `這 ${deleting.length} 本書`}
+              的檔案、閱讀進度、書籤和劃線都會一起刪掉，不能復原。
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" onClick={() => setDeleting(null)} className="btn btn-quiet" data-autofocus>
@@ -350,180 +539,18 @@ export function Library({ books }: { books: BookSummary[] }) {
   )
 }
 
-function ShelfProgress({ book }: { book: BookSummary }) {
-  if (isFinished(book)) {
-    return (
-      <p className="mt-2 flex items-center gap-1 text-[11px] text-green-ink">
-        <CheckCircle size={13} weight="fill" />
-        讀完了
-      </p>
-    )
-  }
-  if (!book.lastReadAt) return <p className="mt-2 font-mono text-[11px] text-faint">未讀</p>
+function ShelfChip({ active, count, onClick, children }: { active: boolean; count: number; onClick: () => void; children: React.ReactNode }) {
   return (
-    <div className="mt-2.5 flex items-center gap-2">
-      <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-line">
-        <span className="block h-full rounded-full bg-accent" style={{ width: percentOf(book.progress) }} />
-      </span>
-      <span className="font-mono text-[11px] text-muted tabular-nums">{percentOf(book.progress)}</span>
-    </div>
-  )
-}
-
-/** The book read last, large: cover on one side, the way back in on the other. */
-function ContinueReading({ book }: { book: BookSummary }) {
-  return (
-    <section aria-label="繼續閱讀" className="rise mb-16 grid grid-cols-[minmax(0,7.5rem)_1fr] items-end gap-6 border-b border-line pb-12 sm:grid-cols-[minmax(0,11rem)_1fr] md:mb-20 md:gap-12 md:pb-16">
-      <div className="relative">
-        <BookLink href={`/books/${book.id}`} label={`繼續讀《${book.title}》`}>
-          <EbookCover title={book.title} author={book.author} coverUrl={book.coverUrl} size="lg" />
-        </BookLink>
-        <div className="mt-3 h-2 rounded-sm bg-line-strong shadow-[0_6px_10px_-6px_rgba(17,17,17,0.35)]" aria-hidden />
-      </div>
-      <div className="min-w-0 pb-5">
-        <p className="font-mono text-[11px] tracking-[0.18em] text-muted uppercase">繼續讀 · {relativeTime(book.lastReadAt!)}</p>
-        <h2 className="mt-3 line-clamp-3 font-serif text-2xl leading-tight font-semibold tracking-tight text-ink-strong md:text-[2.5rem]">
-          {book.title}
-        </h2>
-        {book.author && <p className="mt-2 truncate text-sm text-muted md:text-base">{book.author}</p>}
-        <div className="mt-6 flex max-w-md items-center gap-3">
-          <span className="h-1 flex-1 overflow-hidden rounded-full bg-line">
-            <span className="block h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: percentOf(book.progress) }} />
-          </span>
-          <span className="font-mono text-xs text-muted tabular-nums">{percentOf(book.progress)}</span>
-        </div>
-        <BookLink href={`/books/${book.id}`} label={`繼續讀《${book.title}》`}>
-          <span className="btn btn-primary mt-6 hidden sm:inline-flex">
-            接著讀
-            <ArrowRight size={15} />
-          </span>
-        </BookLink>
-      </div>
-    </section>
-  )
-}
-
-function EmptyLibrary({ onPick }: { onPick: () => void }) {
-  return (
-    <section className="grid items-center gap-12 border-y border-line py-14 md:grid-cols-[1.1fr_1fr] md:py-20">
-      <div className="max-w-md">
-        <BookOpenText size={28} className="text-muted" />
-        <h2 className="mt-5 text-2xl font-semibold tracking-tight text-ink-strong">書庫還是空的</h2>
-        <p className="mt-3 text-[15px] leading-relaxed text-muted">
-          點下面的按鈕選 EPUB 檔，或直接把檔案拖進這個頁面。一次可以放很多本；書名、作者和封面會自動讀出來。
-        </p>
-        <button type="button" onClick={onPick} className="btn btn-primary mt-7">
-          <UploadSimple size={16} />
-          選擇 EPUB 檔
-        </button>
-        <p className="mt-4 font-mono text-[11px] text-faint">每本 50 MB 以內 · 存在你自己的 Supabase Storage</p>
-      </div>
-      <div className="relative mx-auto hidden h-64 w-full max-w-sm md:block" aria-hidden>
-        {[
-          { left: '8%', rotate: -8, delay: 0 },
-          { left: '34%', rotate: 2, delay: 120 },
-          { left: '58%', rotate: 9, delay: 240 },
-        ].map((b, i) => (
-          <span
-            key={i}
-            className="empty-book absolute bottom-0 aspect-[2/3] w-[34%] rounded-r-md rounded-l-sm border border-line-strong bg-surface"
-            style={{ left: b.left, '--r': `${b.rotate}deg`, animationDelay: `${b.delay}ms` } as CSSProperties}
-          >
-            <span className="absolute inset-y-0 left-0 w-[9%] border-r border-line bg-sunken" />
-            <span className="absolute top-[22%] right-[14%] left-[24%] h-1.5 rounded-full bg-line" />
-            <span className="absolute top-[30%] right-[30%] left-[24%] h-1.5 rounded-full bg-line" />
-          </span>
-        ))}
-        <span className="absolute inset-x-0 -bottom-2 h-2 rounded-sm bg-line-strong" />
-      </div>
-    </section>
-  )
-}
-
-function ImportPanel({ jobs, busy, onClose }: { jobs: Job[]; busy: boolean; onClose: () => void }) {
-  const done = jobs.filter((j) => j.stage === 'done' || j.stage === 'skipped' || j.stage === 'error').length
-  return (
-    <aside
-      aria-label="加入電子書"
-      className="sheet-in fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] left-4 z-40 overflow-hidden rounded-xl border border-line bg-surface shadow-[0_24px_60px_-24px_rgba(17,17,17,0.35)] md:bottom-6 md:left-auto md:w-[360px]"
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex h-8 shrink-0 items-center gap-2 rounded-full border px-3.5 text-[13px] transition-[background-color,color,border-color] duration-200 active:scale-[0.98] ${
+        active ? 'border-ink-strong bg-ink-strong text-on-ink' : 'border-line-strong text-ink hover:border-ink-strong/40'
+      }`}
     >
-      <header className="flex items-center justify-between border-b border-line px-4 py-3">
-        <p className="text-sm font-semibold text-ink-strong">
-          {busy ? `加入中 ${done} / ${jobs.length}` : `完成 ${jobs.length} 個檔案`}
-        </p>
-        {!busy && (
-          <button type="button" onClick={onClose} aria-label="關閉" className="rounded-md p-1 text-muted hover:bg-sunken">
-            <X size={15} />
-          </button>
-        )}
-      </header>
-      {busy && (
-        <div className="h-0.5 bg-line">
-          <div className="h-full bg-accent transition-[width] duration-500" style={{ width: `${(done / jobs.length) * 100}%` }} />
-        </div>
-      )}
-      <ul className="max-h-72 divide-y divide-line overflow-y-auto">
-        {jobs.map((j) => (
-          <li key={j.key} className="flex items-center gap-3 px-4 py-2.5">
-            <StageIcon stage={j.stage} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] text-ink-strong">{j.file.name.replace(/\.epub$/i, '')}</p>
-              <p className={`truncate text-[11px] ${j.stage === 'error' ? 'text-red-ink' : 'text-muted'}`}>
-                {j.stage === 'error' ? j.error : STAGE_TEXT[j.stage]}
-                {j.stage === 'waiting' && ` · ${sizeText(j.file.size)}`}
-              </p>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </aside>
-  )
-}
-
-function StageIcon({ stage }: { stage: Stage }) {
-  if (stage === 'done') return <CheckCircle size={18} weight="fill" className="shrink-0 text-green-ink" />
-  if (stage === 'skipped') return <CheckCircle size={18} className="shrink-0 text-faint" />
-  if (stage === 'error') return <WarningCircle size={18} weight="fill" className="shrink-0 text-red-ink" />
-  if (stage === 'waiting') return <span className="size-[18px] shrink-0 rounded-full border border-dashed border-line-strong" />
-  return <CircleNotch size={18} className="shrink-0 animate-spin text-accent" />
-}
-
-function EditBook({ book, onClose, onSaved }: { book: BookSummary; onClose: () => void; onSaved: () => void }) {
-  const [title, setTitle] = useState(book.title)
-  const [author, setAuthor] = useState(book.author ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  return (
-    <Modal title="編輯書籍資訊" onClose={onClose}>
-      <form
-        className="grid gap-4 p-5"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          setSaving(true)
-          const r = await renameBook(book.id, title, author)
-          setSaving(false)
-          if (r.ok) onSaved()
-          else setError(r.error)
-        }}
-      >
-        <label className="grid gap-2">
-          <span className="label">書名</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="field" required maxLength={300} data-autofocus />
-        </label>
-        <label className="grid gap-2">
-          <span className="label">作者</span>
-          <input value={author} onChange={(e) => setAuthor(e.target.value)} className="field" maxLength={200} />
-        </label>
-        {error && <p className="text-sm text-red-ink">{error}</p>}
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} className="btn btn-quiet">
-            取消
-          </button>
-          <button type="submit" disabled={saving || !title.trim()} className="btn btn-primary">
-            儲存
-          </button>
-        </div>
-      </form>
-    </Modal>
+      {children}
+      <span className={`font-mono text-[11px] tabular-nums ${active ? 'opacity-70' : 'text-faint'}`}>{count}</span>
+    </button>
   )
 }

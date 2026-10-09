@@ -66,6 +66,8 @@ export async function importEpub(
   file: File,
   onStage: (stage: 'reading' | 'cover' | 'uploading') => void,
   exists: (key: string) => boolean,
+  /** Categories the new book goes into (the one open in the library). */
+  shelves: number[] = [],
 ) {
   if (!/\.epub$/i.test(file.name) && file.type !== EPUB_MIME) throw new Error('不是 EPUB 檔')
   onStage('reading')
@@ -87,5 +89,5 @@ export async function importEpub(
 
   onStage('uploading')
   const epub = file.type === EPUB_MIME ? file : new File([file], file.name, { type: EPUB_MIME })
-  return uploadToCollection('books', epub, { title: meta.title, author: meta.author, language: meta.language, coverUrl })
+  return uploadToCollection('books', epub, { title: meta.title, author: meta.author, language: meta.language, coverUrl, shelves })
 }

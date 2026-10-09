@@ -38,5 +38,10 @@ export const Books: CollectionConfig = {
     { name: 'lastReadAt', label: '最後閱讀', type: 'date', index: true, admin: { readOnly: true, date: { pickerAppearance: 'dayAndTime' } } },
     // [{ cfi, label, createdAt }], see lib/books.ts
     { name: 'bookmarks', label: '書籤', type: 'json', admin: { readOnly: true } },
+    // Set when the reader reaches the end, or with 標記為讀完; cleared by 重設進度.
+    { name: 'finishedAt', label: '讀完', type: 'date', admin: { readOnly: true, date: { pickerAppearance: 'dayAndTime' } } },
+    { name: 'shelves', label: '分類', type: 'relationship', relationTo: 'book-shelves', hasMany: true, index: true },
+    // [{ id, cfi, text, color, note, createdAt }], see lib/books.ts
+    { name: 'highlights', label: '劃線', type: 'json', admin: { readOnly: true } },
   ],
 }

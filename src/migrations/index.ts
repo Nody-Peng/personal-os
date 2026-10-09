@@ -11,6 +11,7 @@ import * as migration_20261005_152851_task_migrated_from_unique from './20261005
 import * as migration_20261005_153425_page_options from './20261005_153425_page_options';
 import * as migration_20261007_082125_ux_batch from './20261007_082125_ux_batch';
 import * as migration_20261009_054732_books from './20261009_054732_books';
+import * as migration_20261009_063753_book_shelves_highlights from './20261009_063753_book_shelves_highlights';
 
 export const migrations = [
   {
@@ -76,6 +77,11 @@ export const migrations = [
   {
     up: migration_20261009_054732_books.up,
     down: migration_20261009_054732_books.down,
-    name: '20261009_054732_books'
+    name: '20261009_054732_books',
+  },
+  {
+    up: migration_20261009_063753_book_shelves_highlights.up,
+    down: migration_20261009_063753_book_shelves_highlights.down,
+    name: '20261009_063753_book_shelves_highlights'
   },
 ];

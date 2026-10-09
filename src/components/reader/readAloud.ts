@@ -18,6 +18,8 @@ type Options = {
   book: Book
   onState: (state: ReadAloudState) => void
   onError: (message: string) => void
+  /** Asked when a chapter has been read to its end; false pauses there (sleep timer). */
+  continueAfterChapter?: () => boolean
 }
 
 type HighlightWindow = Window & { CSS?: { highlights?: Map<string, unknown> }; Highlight?: new (...ranges: Range[]) => unknown }
@@ -48,6 +50,8 @@ export class ReadAloud {
   private utterance: SpeechSynthesisUtterance | null = null
   private movedAt = 0
   private wakeLock: { release: () => Promise<void> } | null = null
+  /** Paused because a chapter ended (sleep timer): resuming starts the next one. */
+  private chapterDone = false
 
   constructor(opts: Options) {
     this.opts = opts
@@ -67,6 +71,7 @@ export class ReadAloud {
 
   /** Reads from `fromCfi` (a selection), else from the top of the visible page. */
   async start(fromCfi?: string) {
+    this.chapterDone = false
     if (!speechSupported()) {
       this.opts.onError('這個瀏覽器不支援朗讀')
       return
@@ -99,6 +104,11 @@ export class ReadAloud {
 
   resume() {
     if (this.state !== 'paused') return
+    if (this.chapterDone) {
+      this.chapterDone = false
+      void this.keepAwake()
+      return void this.nextSection(++this.generation)
+    }
     if (!this.ensureDocument()) return void this.start()
     void this.keepAwake()
     this.speak(++this.generation)
@@ -260,6 +270,9 @@ export class ReadAloud {
       if (this.index + 1 < this.segments.length) {
         this.index++
         this.speak(gen)
+      } else if (this.opts.continueAfterChapter && !this.opts.continueAfterChapter()) {
+        this.pause()
+        this.chapterDone = true
       } else {
         void this.nextSection(gen)
       }
