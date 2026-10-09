@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { bookmarksOf, cleanBookmarks, cleanCfi, cleanCoverUrl } from '@/lib/books'
 import { guessLanguage, segmentDocument } from '@/components/reader/sentences'
+import { storageName } from '@/lib/storageName'
 
 describe('book input cleaning', () => {
   it('accepts EPUB CFIs and rejects anything else', () => {
@@ -56,5 +57,16 @@ describe('guessLanguage', () => {
     expect(guessLanguage('天空籠罩著一片深藍色的迷霧，月光透過雲層。')).toBe('zh-TW')
     expect(guessLanguage('これはテストです。ひらがなとカタカナがたくさんあります。わたしはねこがすきです。')).toBe('ja')
     expect(guessLanguage('The quick brown fox jumps over the lazy dog.')).toBe('en')
+  })
+})
+
+describe('storageName', () => {
+  it('keeps plain ASCII names and replaces anything Supabase would refuse', () => {
+    expect(storageName('IMG_1234.JPG', 'file')).toBe('IMG_1234.jpg')
+    expect(storageName('zh-sample.epub', 'book')).toBe('zh-sample.epub')
+    expect(storageName('測試之書：夜行的貓.epub', 'book')).toMatch(/^book-[a-z0-9]{1,6}\.epub$/)
+    expect(storageName('Harry Potter 哈利波特 (1).epub', 'book')).toMatch(/^Harry-Potter-1-[a-z0-9]{1,6}\.epub$/)
+    // Two books whose names differ only in Chinese don't share a key.
+    expect(storageName('三體.epub', 'book')).not.toBe(storageName('三體.epub', 'book'))
   })
 })

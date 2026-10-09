@@ -8,6 +8,7 @@
 //   local → plain multipart POST to Payload (development, files in ./media)
 
 import { getUploadMode } from '@/app/(frontend)/notebook-actions'
+import { storageName } from './storageName'
 
 const MAX_SIDE = 2400
 const MAX_BYTES = 50 * 1024 * 1024
@@ -109,15 +110,29 @@ async function postMultipart(collection: UploadCollection, form: FormData): Prom
   return { id: doc.id as number, url: doc.url as string }
 }
 
+/** S3 errors come back as XML: <Error><Code>…</Code><Message>…</Message></Error>. */
+async function storageError(res: Response): Promise<string> {
+  let detail = ''
+  try {
+    const text = await res.text()
+    detail = text.match(/<Message>([^<]*)<\/Message>/)?.[1] ?? text.match(/"message"\s*:\s*"([^"]*)"/)?.[1] ?? ''
+  } catch {
+    // No body.
+  }
+  return `上傳到儲存空間失敗（${res.status}${detail ? `：${detail.slice(0, 120)}` : ''}）`
+}
+
 /** Creates a doc in an upload collection with `file` and the given fields. */
 export async function uploadToCollection(
   collection: UploadCollection,
-  file: File,
+  original: File,
   data: Record<string, unknown> = {},
 ): Promise<UploadedDoc> {
   const current = await uploadMode()
   if (current === 'off') throw new Error('還沒設定檔案儲存空間（Supabase Storage），暫時不能上傳')
-  if (file.size > MAX_BYTES) throw new Error('檔案超過 50 MB')
+  if (original.size > MAX_BYTES) throw new Error('檔案超過 50 MB')
+  const name = storageName(original.name, collection === 'books' ? 'book' : 'file')
+  const file = name === original.name ? original : new File([original], name, { type: original.type })
 
   if (current === 'local') {
     const form = new FormData()
@@ -135,7 +150,7 @@ export async function uploadToCollection(
   if (!signed.ok) throw new Error(await errorOf(signed))
   const { clientUploadContext, filename, headers, url } = await signed.json()
   const put = await fetch(url, { method: 'PUT', body: file, headers })
-  if (!put.ok) throw new Error(`上傳到儲存空間失敗（${put.status}）`)
+  if (!put.ok) throw new Error(await storageError(put))
 
   const form = new FormData()
   form.append(
