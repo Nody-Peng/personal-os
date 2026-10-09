@@ -24,7 +24,20 @@ import { HIGHLIGHT_COLORS, percentOf, type Bookmark, type BookSummary, type High
 import { useResolvedTheme } from '@/lib/theme'
 import { ListenBar, useVoices, type Sleep } from './ListenBar'
 import { cachedLocations, fetchBook, storeLocations } from './loadBook'
-import { ReadAloud, loadTtsPrefs, rankVoices, saveTtsPrefs, speechSupported, voiceKey, type ReadAloudState } from './readAloud'
+import { AZURE_DEFAULTS, DEFAULT_GEMINI_VOICE, type TtsSource } from '@/lib/tts'
+import { useTtsStatus } from './cloudSpeech'
+import {
+  ReadAloud,
+  loadTtsPrefs,
+  rankVoices,
+  saveTtsPrefs,
+  speechSupported,
+  voiceKey,
+  type ReadAloudState,
+  type TtsPrefs,
+  type VoiceChoice,
+} from './readAloud'
+import { VoicePicker, shortVoiceName } from './VoicePicker'
 import { ContentsPanel, SettingsPanel, type TocEntry } from './ReaderPanels'
 import { trackSave } from './readingSync'
 import { SearchPanel, type SearchHit } from './SearchPanel'
@@ -148,10 +161,39 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
   const ready = view.kind === 'ready'
 
   const effectiveLang = lang || 'zh-TW'
-  const voice = useMemo(() => {
-    const saved = ttsPrefs.voices[voiceKey(effectiveLang)]
+  const ttsStatus = useTtsStatus()
+  const langKey = voiceKey(effectiveLang)
+  const browserVoice = useMemo(() => {
+    const saved = ttsPrefs.voices[langKey]
     return voices.find((v) => v.voiceURI === saved) ?? rankVoices(voices, effectiveLang).matching[0] ?? null
-  }, [voices, ttsPrefs, effectiveLang])
+  }, [voices, ttsPrefs.voices, langKey, effectiveLang])
+  const azureVoice = useMemo(() => {
+    const list = ttsStatus?.azure ?? []
+    const saved = ttsPrefs.azure[langKey]
+    return (
+      list.find((v) => v.id === saved)?.id ??
+      list.find((v) => v.id === AZURE_DEFAULTS[langKey])?.id ??
+      list.find((v) => v.locale && voiceKey(v.locale) === langKey)?.id ??
+      null
+    )
+  }, [ttsStatus, ttsPrefs.azure, langKey])
+  const geminiVoice = ttsPrefs.gemini || DEFAULT_GEMINI_VOICE
+  // A cloud choice whose service isn't set up (any more) falls back to the browser's voices.
+  const source: TtsSource =
+    ttsPrefs.source === 'azure' && azureVoice ? 'azure' : ttsPrefs.source === 'gemini' && ttsStatus?.gemini ? 'gemini' : 'browser'
+  const choice = useMemo<VoiceChoice>(() => {
+    if (source === 'azure' && azureVoice) return { kind: 'cloud', provider: 'azure', voice: azureVoice, style: '' }
+    if (source === 'gemini') return { kind: 'cloud', provider: 'gemini', voice: geminiVoice, style: ttsPrefs.geminiStyle }
+    return { kind: 'browser', voice: browserVoice }
+  }, [source, azureVoice, geminiVoice, ttsPrefs.geminiStyle, browserVoice])
+  const voiceLabel =
+    source === 'azure'
+      ? (ttsStatus?.azure?.find((v) => v.id === azureVoice)?.label ?? 'Azure')
+      : source === 'gemini'
+        ? `Gemini · ${geminiVoice}`
+        : browserVoice
+          ? shortVoiceName(browserVoice)
+          : '預設語音'
 
   // ---- open the book ----
   useEffect(() => {
@@ -610,13 +652,8 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
 
   // ---- read aloud ----
   useEffect(() => {
-    const tts = ttsRef.current
-    if (!tts) return
-    tts.voice = voice
-    tts.rate = ttsPrefs.rate
-    tts.lang = effectiveLang
-    tts.refresh()
-  }, [voice, ttsPrefs.rate, effectiveLang, rendition])
+    ttsRef.current?.configure({ choice, rate: ttsPrefs.rate, lang: effectiveLang, title: info.title, artist: info.author ?? '' })
+  }, [choice, ttsPrefs.rate, effectiveLang, rendition, info.title, info.author])
 
   const play = (fromCfi?: string) => {
     const tts = ttsRef.current
@@ -635,7 +672,7 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
     void tts.start(fromSelection)
   }
   const openListen = (fromCfi?: string) => {
-    if (!speechSupported()) {
+    if (source === 'browser' && !speechSupported()) {
       setToast({ text: '這個瀏覽器不支援朗讀', tone: 'error' })
       return
     }
@@ -649,12 +686,9 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
     setListening(false)
     setSleep({ mode: 'off' })
   }
-  const updateTts = (patch: { rate?: number; voice?: SpeechSynthesisVoice }) => {
+  const updateTts = (patch: Partial<TtsPrefs>) => {
     setTtsPrefs((p) => {
-      const nextPrefs = {
-        rate: patch.rate ?? p.rate,
-        voices: patch.voice ? { ...p.voices, [voiceKey(effectiveLang)]: patch.voice.voiceURI } : p.voices,
-      }
+      const nextPrefs = { ...p, ...patch }
       saveTtsPrefs(nextPrefs)
       return nextPrefs
     })
@@ -797,15 +831,26 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
       {listening && (
         <ListenBar
           state={ttsState}
-          lang={effectiveLang}
-          voices={voices}
-          voice={voice}
+          voiceLabel={voiceLabel}
+          voicePicker={(close) => (
+            <VoicePicker
+              lang={effectiveLang}
+              status={ttsStatus}
+              source={source}
+              browserVoices={voices}
+              browserVoice={browserVoice}
+              azureVoice={azureVoice}
+              geminiVoice={geminiVoice}
+              prefs={ttsPrefs}
+              onPrefs={updateTts}
+              onClose={close}
+            />
+          )}
           rate={ttsPrefs.rate}
           onPlay={() => play()}
           onPause={() => ttsRef.current?.pause()}
           onSkip={(d) => ttsRef.current?.skip(d)}
           onRate={(rate) => updateTts({ rate })}
-          onVoice={(v) => updateTts({ voice: v })}
           sleep={sleep}
           onSleep={setSleep}
           onClose={closeListen}

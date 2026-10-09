@@ -70,6 +70,15 @@ npm run dev           # 終端機 2：http://localhost:3000
 
 截圖（PNG）上傳前會用 oxipng 無損壓縮（像素完全不變）；照片會縮到最長邊 2400px、存成 JPEG。
 
+### 朗讀的雲端語音（選用：Azure、Gemini）
+
+電子書的「朗讀」預設用瀏覽器內建語音（免費；Edge 有微軟的自然語音）。想要更像真人、或手機鎖屏也能繼續聽，可以接雲端語音，兩家都接或只接一家都可以：
+
+- **Azure 語音服務**：Azure Portal 建立「Speech」資源（免費方案 F0 每月 50 萬計費字元，中文一字算兩字），在 Vercel 加 `AZURE_SPEECH_KEY`（Keys and Endpoint 頁的 Key 1）和 `AZURE_SPEECH_REGION`（例如 `eastasia`）。
+- **Gemini TTS**：Google AI Studio → Get API key，在 Vercel 加 `GEMINI_API_KEY`。免費方案送出的內容可能被 Google 用來改進產品，要避免請在 Google Cloud 為該專案開啟付費。可用 `GEMINI_TTS_MODEL` 換模型（預設 `gemini-3.8-flash-tts`）。
+
+重新部署後，朗讀列的語音選單就會出現 Azure／Gemini。金鑰只放在伺服器（`/api/tts` 代轉，只有登入後能用）。每段文字第一次念到才產生並計費，念過的音檔存在那台裝置的瀏覽器裡，重聽不再計費。本機想不接金鑰試流程，可在 `.env` 加 `TTS_MOCK=1`（只在開發模式有效，會用提示音代替語音）。
+
 ### 每日排程（防止 Supabase 暫停、清理檔案）
 
 `vercel.json` 設了一個每天台灣時間凌晨 3 點的 Vercel Cron（`/api/cron/daily`），會：

@@ -1,8 +1,8 @@
 'use client'
 
-import { Check, MoonStars, Pause, Play, SkipBack, SkipForward, Waveform, X } from '@phosphor-icons/react'
-import { useEffect, useRef, useState } from 'react'
-import { isNaturalVoice, rankVoices, type ReadAloudState } from './readAloud'
+import { Check, CircleNotch, MoonStars, Pause, Play, SkipBack, SkipForward, Waveform, X } from '@phosphor-icons/react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { ReadAloudState } from './readAloud'
 
 export const RATES = [0.8, 1, 1.2, 1.4, 1.7, 2] as const
 
@@ -33,21 +33,6 @@ function SleepLeft({ until }: { until: number }) {
   return <>{Math.max(1, Math.ceil((until - now) / 60_000))} 分</>
 }
 
-const LANG_NAMES: Record<string, string> = { zh: '中文', en: '英文', ja: '日文', ko: '韓文', fr: '法文', de: '德文', es: '西班牙文' }
-const langName = (lang: string) => LANG_NAMES[lang.toLowerCase().split(/[-_]/)[0]] ?? lang
-
-/** "Microsoft HsiaoChen Online (Natural) - Chinese (Taiwanese Mandarin)" → "HsiaoChen" */
-export function shortVoiceName(v: SpeechSynthesisVoice) {
-  return (
-    v.name
-      .replace(/^(Microsoft|Google|Apple)\s+/i, '')
-      .replace(/\s*\(.*$/, '')
-      .replace(/\s+-\s+.*$/, '')
-      .replace(/\s+Online$/i, '')
-      .trim() || v.name
-  )
-}
-
 /** The browser's voices; Chrome fills the list in a moment after load. */
 export function useVoices(): SpeechSynthesisVoice[] {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
@@ -74,25 +59,24 @@ function Equalizer({ on }: { on: boolean }) {
 
 type Props = {
   state: ReadAloudState
-  lang: string
-  voices: SpeechSynthesisVoice[]
-  voice: SpeechSynthesisVoice | null
+  /** Name of the voice in use, shown on the bar. */
+  voiceLabel: string
+  /** The voice menu (VoicePicker); `close` hides it after a choice. */
+  voicePicker: (close: () => void) => ReactNode
   rate: number
   onPlay: () => void
   onPause: () => void
   onSkip: (delta: 1 | -1) => void
   onRate: (rate: number) => void
-  onVoice: (voice: SpeechSynthesisVoice) => void
   sleep: Sleep
   onSleep: (sleep: Sleep) => void
   onClose: () => void
 }
 
-export function ListenBar({ state, lang, voices, voice, rate, onPlay, onPause, onSkip, onRate, onVoice, sleep, onSleep, onClose }: Props) {
+export function ListenBar({ state, voiceLabel, voicePicker, rate, onPlay, onPause, onSkip, onRate, sleep, onSleep, onClose }: Props) {
   const [picking, setPicking] = useState<'voice' | 'sleep' | null>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
   const playing = state === 'playing' || state === 'loading'
-  const { matching, others } = rankVoices(voices, lang)
 
   useEffect(() => {
     if (!picking) return
@@ -111,33 +95,6 @@ export function ListenBar({ state, lang, voices, voice, rate, onPlay, onPause, o
   const nextRate = () => {
     const i = RATES.findIndex((r) => r >= rate - 0.001)
     onRate(RATES[(i + 1) % RATES.length])
-  }
-
-  const voiceRow = (v: SpeechSynthesisVoice) => {
-    const active = v.voiceURI === voice?.voiceURI
-    return (
-      <li key={v.voiceURI}>
-        <button
-          type="button"
-          onClick={() => {
-            onVoice(v)
-            setPicking(null)
-          }}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-[var(--r-sunken)]"
-        >
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-2 text-[13px]">
-              <span className="truncate">{shortVoiceName(v)}</span>
-              {isNaturalVoice(v) && (
-                <span className="shrink-0 rounded-full bg-[var(--r-accent)]/12 px-1.5 py-px text-[10px] font-medium text-[var(--r-accent)]">自然</span>
-              )}
-            </span>
-            <span className="block truncate font-mono text-[10.5px] text-[var(--r-muted)]">{v.lang}</span>
-          </span>
-          {active && <Check size={15} className="shrink-0 text-[var(--r-accent)]" />}
-        </button>
-      </li>
-    )
   }
 
   return (
@@ -173,24 +130,7 @@ export function ListenBar({ state, lang, voices, voice, rate, onPlay, onPause, o
           </ul>
         </div>
       )}
-      {picking === 'voice' && (
-        <div className="reader-pop mb-2 max-h-[min(26rem,55dvh)] overflow-y-auto overscroll-contain rounded-2xl border border-[var(--r-line)] bg-[var(--r-surface)] p-2 text-[var(--r-ink)] shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]">
-          <p className="px-3 pt-2 pb-1 text-xs text-[var(--r-muted)]">{langName(lang)}語音</p>
-          {matching.length ? (
-            <ul>{matching.map(voiceRow)}</ul>
-          ) : (
-            <p className="px-3 pb-3 text-[13px] leading-relaxed text-[var(--r-muted)]">
-              這台裝置沒有{langName(lang)}語音。可以在系統設定加裝語音，或改用 Edge 瀏覽器（內建自然語音）。
-            </p>
-          )}
-          {others.length > 0 && (
-            <details className="mt-1 border-t border-[var(--r-line)] pt-1">
-              <summary className="cursor-pointer px-3 py-2 text-xs text-[var(--r-muted)]">其他語言（{others.length}）</summary>
-              <ul>{others.map(voiceRow)}</ul>
-            </details>
-          )}
-        </div>
-      )}
+      {picking === 'voice' && voicePicker(() => setPicking(null))}
 
       <div
         role="toolbar"
@@ -206,7 +146,13 @@ export function ListenBar({ state, lang, voices, voice, rate, onPlay, onPause, o
           aria-label={playing ? '暫停' : '播放'}
           className="grid size-11 place-items-center rounded-full bg-[var(--r-ink)] text-[var(--r-surface)] transition-transform active:scale-95"
         >
-          {playing ? <Pause size={18} weight="fill" /> : <Play size={18} weight="fill" className="translate-x-px" />}
+          {state === 'loading' ? (
+            <CircleNotch size={18} weight="bold" className="animate-spin" />
+          ) : playing ? (
+            <Pause size={18} weight="fill" />
+          ) : (
+            <Play size={18} weight="fill" className="translate-x-px" />
+          )}
         </button>
         <button type="button" onClick={() => onSkip(1)} aria-label="下一句" className="grid size-10 place-items-center rounded-full hover:bg-[var(--r-sunken)] active:scale-95">
           <SkipForward size={18} weight="fill" />
@@ -230,7 +176,7 @@ export function ListenBar({ state, lang, voices, voice, rate, onPlay, onPause, o
           className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-full px-3 text-left text-[13px] hover:bg-[var(--r-sunken)]"
         >
           {state === 'idle' ? <Waveform size={16} className="shrink-0 text-[var(--r-muted)]" /> : <Equalizer on={state === 'playing'} />}
-          <span className="truncate">{voice ? shortVoiceName(voice) : '預設語音'}</span>
+          <span className="truncate">{voiceLabel}</span>
         </button>
         <button
           type="button"
