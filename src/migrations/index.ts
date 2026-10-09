@@ -10,6 +10,7 @@ import * as migration_20261004_112659_day_plan_cleanup from './20261004_112659_d
 import * as migration_20261005_152851_task_migrated_from_unique from './20261005_152851_task_migrated_from_unique';
 import * as migration_20261005_153425_page_options from './20261005_153425_page_options';
 import * as migration_20261007_082125_ux_batch from './20261007_082125_ux_batch';
+import * as migration_20261009_054732_books from './20261009_054732_books';
 
 export const migrations = [
   {
@@ -70,6 +71,11 @@ export const migrations = [
   {
     up: migration_20261007_082125_ux_batch.up,
     down: migration_20261007_082125_ux_batch.down,
-    name: '20261007_082125_ux_batch'
+    name: '20261007_082125_ux_batch',
+  },
+  {
+    up: migration_20261009_054732_books.up,
+    down: migration_20261009_054732_books.down,
+    name: '20261009_054732_books'
   },
 ];

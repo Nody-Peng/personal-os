@@ -77,6 +77,7 @@ export interface Config {
     'note-pages': NotePage;
     'page-snapshots': PageSnapshot;
     media: Media;
+    books: Book;
     'toefl-scores': ToeflScore;
     ideas: Idea;
     users: User;
@@ -97,6 +98,7 @@ export interface Config {
     'note-pages': NotePagesSelect<false> | NotePagesSelect<true>;
     'page-snapshots': PageSnapshotsSelect<false> | PageSnapshotsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
+    books: BooksSelect<false> | BooksSelect<true>;
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
@@ -482,6 +484,48 @@ export interface Media {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "books".
+ */
+export interface Book {
+  id: number;
+  title: string;
+  author?: string | null;
+  /**
+   * EPUB 標示的語言，例如 zh-TW、en
+   */
+  language?: string | null;
+  coverUrl?: string | null;
+  /**
+   * EPUB CFI
+   */
+  cfi?: string | null;
+  progress?: number | null;
+  lastReadAt?: string | null;
+  bookmarks?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  prefix?: string | null;
+  _objectKey?: string | null;
+  updatedAt: string;
+  createdAt: string;
+  url?: string | null;
+  thumbnailURL?: string | null;
+  filename?: string | null;
+  mimeType?: string | null;
+  filesize?: number | null;
+  width?: number | null;
+  height?: number | null;
+  focalX?: number | null;
+  focalY?: number | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "toefl-scores".
  */
 export interface ToeflScore {
@@ -593,6 +637,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'media';
         value: number | Media;
+      } | null)
+    | ({
+        relationTo: 'books';
+        value: number | Book;
       } | null)
     | ({
         relationTo: 'toefl-scores';
@@ -798,6 +846,33 @@ export interface PageSnapshotsSelect<T extends boolean = true> {
 export interface MediaSelect<T extends boolean = true> {
   alt?: T;
   unusedSince?: T;
+  prefix?: T;
+  _objectKey?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  url?: T;
+  thumbnailURL?: T;
+  filename?: T;
+  mimeType?: T;
+  filesize?: T;
+  width?: T;
+  height?: T;
+  focalX?: T;
+  focalY?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "books_select".
+ */
+export interface BooksSelect<T extends boolean = true> {
+  title?: T;
+  author?: T;
+  language?: T;
+  coverUrl?: T;
+  cfi?: T;
+  progress?: T;
+  lastReadAt?: T;
+  bookmarks?: T;
   prefix?: T;
   _objectKey?: T;
   updatedAt?: T;

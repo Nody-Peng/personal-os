@@ -8,6 +8,7 @@ import { buildConfig, type Payload } from 'payload'
 import { fileURLToPath } from 'url'
 import sharp from 'sharp'
 
+import { Books } from './collections/Books'
 import { DailyLogs } from './collections/DailyLogs'
 import { Habits } from './collections/Habits'
 import { Ideas } from './collections/Ideas'
@@ -109,7 +110,7 @@ export default buildConfig({
     fallbackLanguage: 'zh-TW',
     supportedLanguages: { 'zh-TW': zhTw, en },
   },
-  collections: [DailyLogs, Tasks, Habits, WeeklyReviews, MonthlyNotes, Journals, Notebooks, NotePages, PageSnapshots, Media, ToeflScores, Ideas, Users],
+  collections: [DailyLogs, Tasks, Habits, WeeklyReviews, MonthlyNotes, Journals, Notebooks, NotePages, PageSnapshots, Media, Books, ToeflScores, Ideas, Users],
   globals: [Settings],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
@@ -133,13 +134,16 @@ export default buildConfig({
   sharp,
   upload: { limits: { fileSize: MAX_UPLOAD_BYTES } },
   plugins: [
-    // Production stores media in a private Supabase Storage bucket (S3 API).
+    // Production stores media and e-books in a private Supabase Storage bucket (S3 API).
     // Without S3_BUCKET (local development) files go to ./media. The plugin is
     // always registered so the database schema is the same either way.
     s3Storage({
       enabled: Boolean(process.env.S3_BUCKET),
       alwaysInsertFields: true,
-      collections: { media: { signedDownloads: { shouldUseSignedURL: () => true } } },
+      collections: {
+        media: { signedDownloads: { shouldUseSignedURL: () => true } },
+        books: { prefix: 'books', signedDownloads: { shouldUseSignedURL: () => true } },
+      },
       bucket: process.env.S3_BUCKET ?? '',
       // Browsers upload straight to the bucket, so files can exceed Vercel's 4.5 MB body limit.
       clientUploads: true,

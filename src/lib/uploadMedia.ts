@@ -1,9 +1,10 @@
 'use client'
 
 // Uploads a file to the `media` collection and returns its URL
-// (/api/media/file/<name>, served behind the login check).
+// (/api/media/file/<name>, served behind the login check). `uploadToCollection`
+// does the same for any upload collection (e-books go to `books`).
 //   s3    → ask Payload for a signed URL, PUT straight to Supabase Storage,
-//           then create the media doc (no Vercel body-size limit)
+//           then create the doc (no Vercel body-size limit)
 //   local → plain multipart POST to Payload (development, files in ./media)
 
 import { getUploadMode } from '@/app/(frontend)/notebook-actions'
@@ -98,34 +99,38 @@ async function errorOf(res: Response): Promise<string> {
   }
 }
 
-async function postMultipart(form: FormData): Promise<string> {
-  const res = await fetch('/api/media', { method: 'POST', body: form, credentials: 'include' })
+type UploadCollection = 'media' | 'books'
+type UploadedDoc = { id: number; url: string }
+
+async function postMultipart(collection: UploadCollection, form: FormData): Promise<UploadedDoc> {
+  const res = await fetch(`/api/${collection}`, { method: 'POST', body: form, credentials: 'include' })
   if (!res.ok) throw new Error(await errorOf(res))
   const { doc } = await res.json()
-  return doc.url as string
+  return { id: doc.id as number, url: doc.url as string }
 }
 
-export async function uploadMedia(original: File, options?: ShrinkOptions): Promise<string> {
+/** Creates a doc in an upload collection with `file` and the given fields. */
+export async function uploadToCollection(
+  collection: UploadCollection,
+  file: File,
+  data: Record<string, unknown> = {},
+): Promise<UploadedDoc> {
   const current = await uploadMode()
   if (current === 'off') throw new Error('還沒設定檔案儲存空間（Supabase Storage），暫時不能上傳')
-  // Photos are scaled and re-encoded; screenshots keep their size and are only
-  // compressed losslessly (page icons are scaled first, then compressed too).
-  const scaled = original.type === 'image/png' && !options?.maxSide ? original : await shrinkImage(original, options)
-  const file = await optimisePng(scaled)
   if (file.size > MAX_BYTES) throw new Error('檔案超過 50 MB')
 
   if (current === 'local') {
     const form = new FormData()
     form.append('file', file)
-    form.append('_payload', JSON.stringify({}))
-    return postMultipart(form)
+    form.append('_payload', JSON.stringify(data))
+    return postMultipart(collection, form)
   }
 
   const signed = await fetch('/api/storage-s3-generate-signed-url', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collectionSlug: 'media', filename: file.name, filesize: file.size, mimeType: file.type }),
+    body: JSON.stringify({ collectionSlug: collection, filename: file.name, filesize: file.size, mimeType: file.type }),
   })
   if (!signed.ok) throw new Error(await errorOf(signed))
   const { clientUploadContext, filename, headers, url } = await signed.json()
@@ -135,10 +140,18 @@ export async function uploadMedia(original: File, options?: ShrinkOptions): Prom
   const form = new FormData()
   form.append(
     'file',
-    JSON.stringify({ clientUploadContext, collectionSlug: 'media', filename: filename ?? file.name, mimeType: file.type, size: file.size }),
+    JSON.stringify({ clientUploadContext, collectionSlug: collection, filename: filename ?? file.name, mimeType: file.type, size: file.size }),
   )
-  form.append('_payload', JSON.stringify({}))
-  return postMultipart(form)
+  form.append('_payload', JSON.stringify(data))
+  return postMultipart(collection, form)
+}
+
+export async function uploadMedia(original: File, options?: ShrinkOptions): Promise<string> {
+  // Photos are scaled and re-encoded; screenshots keep their size and are only
+  // compressed losslessly (page icons are scaled first, then compressed too).
+  const scaled = original.type === 'image/png' && !options?.maxSide ? original : await shrinkImage(original, options)
+  const file = await optimisePng(scaled)
+  return (await uploadToCollection('media', file)).url
 }
 
 /** Shows an error in the notebook's toast (NotebookShell listens). */

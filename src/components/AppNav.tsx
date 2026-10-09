@@ -1,6 +1,6 @@
 'use client'
 
-import { Books, ChartLineUp, DotsThreeCircle, GearSix, Lightbulb, MagnifyingGlass, SignOut, SunHorizon, X } from '@phosphor-icons/react'
+import { BookOpenText, Books, ChartLineUp, DotsThreeCircle, GearSix, Lightbulb, MagnifyingGlass, SignOut, SunHorizon, X } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -11,6 +11,7 @@ import { ThemeCycleButton, ThemeSwitch } from '@/components/ThemeSwitch'
 const ITEMS = [
   { href: '/', label: '今天', Icon: SunHorizon },
   { href: '/journal', label: '書架', Icon: Books },
+  { href: '/books', label: '閱讀', Icon: BookOpenText },
   { href: '/toefl', label: '托福', Icon: ChartLineUp },
   { href: '/ideas', label: '想學', Icon: Lightbulb },
 ] as const
@@ -94,7 +95,7 @@ export function AppNav() {
         aria-label="主要頁面"
         className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
       >
-        <ul className="grid grid-cols-5">
+        <ul className="grid grid-cols-6">
           {ITEMS.map(({ href, label, Icon }) => {
             const active = isActive(pathname, href)
             return (
