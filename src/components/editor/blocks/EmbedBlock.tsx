@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getFramePolicy } from '@/app/(frontend)/link-actions'
 import { isKnownEmbed, toEmbed } from '@/lib/embeds'
 import type { NoteEditor } from '../schema'
+import { isFresh } from './freshBlock'
 import { UrlPrompt } from './UrlPrompt'
 
 const MIN_HEIGHT = 120
@@ -37,8 +38,10 @@ export const EmbedBlock = createReactBlockSpec(
         return (
           <UrlPrompt
             icon={FrameCorners}
+            label="嵌入網址（YouTube、Google 地圖、Figma…）"
             placeholder="貼上 YouTube、Google 地圖、Google 文件、Figma… 的網址"
             action="嵌入"
+            fresh={isFresh(block)}
             hint="其他網站也能試試看，有些網站不允許被嵌入。"
             onSubmit={(next) => editor.updateBlock(block, { props: { url: next } })}
             onCancel={() => editor.removeBlocks([block])}

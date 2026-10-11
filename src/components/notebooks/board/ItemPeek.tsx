@@ -4,7 +4,7 @@ import { ArrowsOutSimple, Copy, DotsThree, Smiley, Trash, X } from '@phosphor-ic
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { duplicatePage, getPageDetail, trashPage, updatePage, type PageDetail } from '@/app/(frontend)/notebook-actions'
-import { BlockEditor, SaveStatusText } from '@/components/editor/BlockEditor'
+import { BlockEditor, SaveStatusText, type EditorHandle } from '@/components/editor/BlockEditor'
 import { NoteContext } from '@/components/editor/NoteContext'
 import { dropItems, loadBoard, renameItem, useBoard } from '@/lib/boardStore'
 import { escapeHandledElsewhere } from '@/lib/escape'
@@ -16,6 +16,7 @@ import { Menu } from '../Menu'
 import { useNoteEditorContext, useNotebook } from '../NotebookShell'
 import { ItemProperties } from './ItemProperties'
 import { NoteIcon } from '../NoteIcon'
+import { focusTitleEnd, onTitleKeyDown } from '../titleKeys'
 
 /** A board card opened beside the page (Notion's side peek): properties and content. */
 export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
@@ -37,7 +38,7 @@ export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
   useEffect(() => {
     // Esc closes the peek unless it is closing a menu or picker of its own first.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || escapeHandledElsewhere()) return
+      if (e.key !== 'Escape' || e.isComposing || escapeHandledElsewhere()) return
       onClose()
     }
     // Capture phase: decide before a menu closes itself and disappears.
@@ -68,6 +69,8 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
   const { enqueue, status, error } = useSaveQueue()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef<string | null>(null)
+  const titleEl = useRef<HTMLTextAreaElement>(null)
+  const editor = useRef<EditorHandle>(null)
 
   const flush = () => {
     if (timer.current) clearTimeout(timer.current)
@@ -167,12 +170,8 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
           value={title}
           onChange={(e) => rename(e.target.value)}
           onBlur={flush}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              flush()
-            }
-          }}
+          ref={titleEl}
+          onKeyDown={(e) => onTitleKeyDown(e, { editor: editor.current, setTitle: rename, flush })}
           rows={1}
           placeholder={UNTITLED}
           aria-label="標題"
@@ -195,6 +194,8 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
               placeholder="寫下細節，或按 / 插入區塊…"
               allowUploads
               templateKind="page"
+              editorHandle={editor}
+              onLeaveTop={() => focusTitleEnd(titleEl.current)}
               onStatus={(s, err) => setBody({ status: s, error: err })}
             />
           </NoteContext.Provider>

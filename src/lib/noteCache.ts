@@ -19,6 +19,13 @@ const seen = new Set<string>()
 const local = new Map<string, unknown>()
 /** Keys whose latest local state may not have reached the server yet. */
 const unsaved = new Set<string>()
+/**
+ * Server time of each key's last save, when the save reports it. A render
+ * stamped earlier is older than the local copy even if it was never mounted:
+ * an action that revalidates (creating a sub-page, say) re-renders the page,
+ * and leaving right away caches that render without it ever being seen.
+ */
+const savedAt = new Map<string, number>()
 
 /** True the first time a server render is mounted. */
 function isFresh(key: string, renderedAt: number): boolean {
@@ -34,7 +41,9 @@ function isFresh(key: string, renderedAt: number): boolean {
  * can render before that save lands).
  */
 export function withLocal<T>(key: string, server: T, renderedAt: number): T {
-  if (isFresh(key, renderedAt) && !(unsaved.has(key) && local.has(key))) {
+  const fresh = isFresh(key, renderedAt)
+  const localIsNewer = local.has(key) && (unsaved.has(key) || (savedAt.get(key) ?? 0) > renderedAt)
+  if (fresh && !localIsNewer) {
     local.delete(key)
     return server
   }
@@ -53,8 +62,9 @@ export function peekLocal<T>(key: string): T | undefined {
   return local.get(key) as T | undefined
 }
 
-/** The server has `value` (or, without one, whatever is latest). */
-export function markSaved(key: string, value?: unknown) {
+/** The server has `value` (or, without one, whatever is latest), saved at server time `at` if known. */
+export function markSaved(key: string, value?: unknown, at?: number) {
+  if (at != null) savedAt.set(key, Math.max(at, savedAt.get(key) ?? 0))
   if (value === undefined || local.get(key) === value) unsaved.delete(key)
 }
 

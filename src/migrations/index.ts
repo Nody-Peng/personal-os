@@ -12,6 +12,7 @@ import * as migration_20261005_153425_page_options from './20261005_153425_page_
 import * as migration_20261007_082125_ux_batch from './20261007_082125_ux_batch';
 import * as migration_20261009_054732_books from './20261009_054732_books';
 import * as migration_20261009_063753_book_shelves_highlights from './20261009_063753_book_shelves_highlights';
+import * as migration_20261011_145911_notebook_last_page from './20261011_145911_notebook_last_page';
 
 export const migrations = [
   {
@@ -82,6 +83,11 @@ export const migrations = [
   {
     up: migration_20261009_063753_book_shelves_highlights.up,
     down: migration_20261009_063753_book_shelves_highlights.down,
-    name: '20261009_063753_book_shelves_highlights'
+    name: '20261009_063753_book_shelves_highlights',
+  },
+  {
+    up: migration_20261011_145911_notebook_last_page.up,
+    down: migration_20261011_145911_notebook_last_page.down,
+    name: '20261011_145911_notebook_last_page'
   },
 ];

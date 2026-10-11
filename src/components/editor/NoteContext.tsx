@@ -12,6 +12,8 @@ export type NoteEditorContext = {
   createChildPage: () => Promise<PageNode | null>
   createBoard: () => Promise<PageNode | null>
   openPeek: (id: number) => void
+  /** Goes to a page of this notebook (a sub-page just made with /頁面). */
+  openPage: (id: number) => void
 }
 
 export const NoteContext = createContext<NoteEditorContext | null>(null)

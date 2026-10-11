@@ -404,6 +404,19 @@
   --bn-border-radius-medium: 8px;
   --bn-border-radius-large: 12px;
 }
+/* The hint on an empty line belongs to the line being typed on. BlockNote marks
+   the line under the selection even before the editor has the focus, which put
+   it on an empty first line of every page opened. */
+.journal-editor .bn-editor:not(.ProseMirror-focused) .bn-block-content[data-is-empty-and-focused]:not([data-is-only-empty-block])::after {
+  content: none;
+}
+/* Phones: the ⋮⋮ handles would sit off the screen's edge; their actions are in
+   the toolbar above the keyboard instead (editor/MobileBlockButtons). */
+@media (hover: none) and (max-width: 767px) {
+  .journal-editor .bn-side-menu {
+    display: none !important;
+  }
+}
 .journal-editor .bn-editor {
   padding-inline: 28px 4px;
   font-family: var(--font-sans);
@@ -599,8 +612,19 @@
   margin-left: -0.375rem;
   color: var(--color-ink);
 }
-a.note-pagelink:hover {
+a.note-pagelink:hover,
+button.note-pagelink:hover {
   background: var(--color-sunken);
+}
+/* An empty bookmark, embed or page link that isn't being filled in (UrlPrompt). */
+button.note-pagelink {
+  background: var(--color-canvas);
+  color: var(--color-muted);
+  text-align: left;
+  cursor: pointer;
+}
+button.note-pagelink:hover {
+  color: var(--color-ink);
 }
 .note-linkpicker {
   width: 100%;

@@ -5,6 +5,7 @@ import { ArrowClockwise, BookmarkSimple, Globe } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { getLinkPreview } from '@/app/(frontend)/link-actions'
 import type { LinkMeta } from '@/lib/linkMeta'
+import { isFresh } from './freshBlock'
 import { UrlPrompt } from './UrlPrompt'
 
 // One request per address even when the same link is on screen twice.
@@ -76,8 +77,10 @@ export const BookmarkBlock = createReactBlockSpec(
         return (
           <UrlPrompt
             icon={BookmarkSimple}
+            label="新增網頁書籤"
             placeholder="貼上網址，建立網頁書籤"
             action="建立書籤"
+            fresh={isFresh(block)}
             onSubmit={(next) => editor.updateBlock(block, { props: { url: next } })}
             onCancel={() => editor.removeBlocks([block])}
           />

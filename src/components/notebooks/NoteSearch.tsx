@@ -18,7 +18,7 @@ const KIND_ICONS: Record<SearchKind, ReactNode> = {
 
 const DEBOUNCE = 220
 
-/** Ctrl/⌘ K anywhere the hook is mounted. */
+/** Ctrl/⌘ K anywhere the hook is mounted (with text selected in an editor it adds a link instead, as in Notion). */
 export function useSearchShortcut(onOpen: () => void) {
   const ref = useRef(onOpen)
   useEffect(() => {
@@ -26,6 +26,8 @@ export function useSearchShortcut(onOpen: () => void) {
   })
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // BlockNote's link button (shown while text is selected) takes Ctrl K on the editor first.
+      if (e.defaultPrevented) return
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         ref.current()
@@ -97,6 +99,8 @@ export function NoteSearch({ onClose }: { onClose: () => void }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
+            // Enter that picks a Zhuyin candidate isn't "open the result".
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
             if (e.key === 'ArrowDown') {
               e.preventDefault()
               setActive((a) => Math.min(hits.length - 1, a + 1))

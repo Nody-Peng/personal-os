@@ -46,12 +46,14 @@ const NotebookContext = createContext<NotebookContextValue | null>(null)
 /** Context for notebook-aware editor blocks inside page `pageId`. */
 export function useNoteEditorContext(pageId: number): NoteEditorContext {
   const { notebook, pages, restored, openPeek, notify } = useNotebook()
+  const router = useRouter()
   return useMemo(
     () => ({
       notebookId: notebook.id,
       pageId,
       pages,
       openPeek,
+      openPage: (id: number) => router.push(urlOf(notebook.id, id)),
       createChildPage: async () => {
         const result = await createPage(notebook.id, pageId)
         if (!result.ok || !result.data) {
@@ -71,7 +73,7 @@ export function useNoteEditorContext(pageId: number): NoteEditorContext {
         return result.data
       },
     }),
-    [notebook.id, pageId, pages, restored, openPeek, notify],
+    [notebook.id, pageId, pages, restored, openPeek, notify, router],
   )
 }
 

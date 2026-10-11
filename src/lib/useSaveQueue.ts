@@ -17,7 +17,7 @@ export function useSaveQueue() {
   const [error, setError] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
 
-  const enqueue = useCallback((run: () => Promise<ActionResult>) => {
+  const enqueue = useCallback((run: () => Promise<ActionResult<unknown>>) => {
     pending.current += 1
     setStatus('saving')
     chain.current = chain.current

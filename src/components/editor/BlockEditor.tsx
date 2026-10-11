@@ -26,7 +26,8 @@ export type EditorTarget =
   | { kind: 'month'; month: string }
   | { kind: 'note'; id: number }
 
-function save(target: EditorTarget, blocks: unknown[]): Promise<ActionResult> {
+/** Notebook pages also report when the server saved (noteCache uses it to spot older renders). */
+function save(target: EditorTarget, blocks: unknown[]): Promise<ActionResult<{ savedAt: number } | undefined>> {
   switch (target.kind) {
     case 'day':
       return saveDailyLog(target.day, { note: blocks })
@@ -57,6 +58,8 @@ function targetKey(target: EditorTarget): string {
 }
 
 const SAVE_DELAY = 1000
+/** Waits before saving again after a failure: 2 s, 5 s, 15 s, then every 30 s. */
+const RETRY_DELAYS = [2000, 5000, 15000, 30000]
 
 type Props = {
   target: EditorTarget
@@ -77,8 +80,10 @@ type Props = {
   editable?: boolean
   /** While empty, offer the templates for this kind of note (editor/TemplateBar). */
   templateKind?: TemplateKind
-  /** Lets the page replace the content (restoring a version). */
+  /** Lets the page replace the content (restoring a version) and move the caret in from its title. */
   editorHandle?: Ref<EditorHandle>
+  /** ↑ / Backspace at the very top of the text go back to the page title. */
+  onLeaveTop?: () => void
 }
 
 /** Notion-style editor that autosaves a second after typing stops. */
@@ -94,6 +99,7 @@ export function BlockEditor({
   editable = true,
   templateKind,
   editorHandle,
+  onLeaveTop,
 }: Props) {
   const { enqueue, status, error } = useSaveQueue()
   // Every editor records its latest document (so a board card edited in the
@@ -113,20 +119,49 @@ export function BlockEditor({
     onEditRef.current = onEdit
   })
 
+  // Saves in flight, and failed attempts in a row (for the retry backoff).
+  const inFlight = useRef(0)
+  const failures = useRef(0)
+  const closed = useRef(false)
+  // The retry timer calls the latest flush (set below).
+  const retry = useRef<() => void>(() => {})
+
   const flush = useCallback(() => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
     const blocks = pending.current
     pending.current = null
-    if (blocks) {
-      const t = targetRef.current
-      enqueue(async () => {
-        const result = await save(t, blocks)
-        if (result.ok) markSaved(key, blocks)
-        return result
-      })
+    if (!blocks) return
+    const t = targetRef.current
+    inFlight.current += 1
+    // A failed save (offline, signed out, server hiccup) is tried again with
+    // the same document unless newer text is already waiting.
+    const retryLater = () => {
+      if (closed.current) return
+      pending.current ??= blocks
+      failures.current += 1
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(() => retry.current(), RETRY_DELAYS[Math.min(failures.current, RETRY_DELAYS.length) - 1])
     }
+    enqueue(async () => {
+      try {
+        const result = await save(t, blocks)
+        if (result.ok) {
+          failures.current = 0
+          markSaved(key, blocks, result.data?.savedAt)
+        } else retryLater()
+        return result
+      } catch (e) {
+        retryLater()
+        throw e
+      } finally {
+        inFlight.current -= 1
+      }
+    })
   }, [enqueue, key])
+  useEffect(() => {
+    retry.current = flush
+  })
 
   const onChange = useCallback(
     (blocks: unknown[]) => {
@@ -139,13 +174,30 @@ export function BlockEditor({
     [flush, key],
   )
 
-  // Never drop the last keystrokes when the tab hides or the panel closes.
+  // Never drop the last keystrokes when the tab hides or the panel closes; back
+  // online, a failed save goes again at once. Closing or reloading the tab with
+  // text not yet saved asks first (the text only lives in this tab until then).
   useEffect(() => {
     const onHide = () => document.visibilityState === 'hidden' && flush()
+    const onOnline = () => pending.current && flush()
+    const onUnload = (e: BeforeUnloadEvent) => {
+      if (!pending.current && !inFlight.current) return
+      flush()
+      e.preventDefault()
+      e.returnValue = '' // Safari still needs this
+    }
+    closed.current = false
     document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('beforeunload', onUnload)
     return () => {
       document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('beforeunload', onUnload)
       flush()
+      // Leaving: this last save is the final try (no retries from a closed editor).
+      closed.current = true
+      if (timer.current) clearTimeout(timer.current)
     }
   }, [flush])
 
@@ -162,6 +214,7 @@ export function BlockEditor({
         editable={editable}
         templateKind={templateKind}
         handle={editorHandle}
+        onLeaveTop={onLeaveTop}
       />
       {/* Editors without their own status line still must not fail silently. */}
       {!onStatus && status === 'error' && (
@@ -174,7 +227,15 @@ export function BlockEditor({
 }
 
 export function SaveStatusText({ status, error }: { status: SaveStatus; error: string | null }) {
-  if (status === 'error') return <span role="alert" className="text-xs text-red-ink">{error}</span>
+  if (status === 'error') {
+    // Short on a phone header (the text itself is saved again by BlockEditor).
+    return (
+      <span role="alert" title={error ?? undefined} className="text-xs text-red-ink">
+        <span className="sm:hidden">沒有存到</span>
+        <span className="hidden sm:inline">{error}</span>
+      </span>
+    )
+  }
   if (status === 'saving') return <span className="text-xs text-muted">儲存中…</span>
   if (status === 'saved') return <span className="text-xs text-muted">已儲存</span>
   return <span className="text-xs text-muted">自動儲存</span>

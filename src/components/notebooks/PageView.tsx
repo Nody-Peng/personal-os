@@ -4,7 +4,7 @@ import { CaretRight, FileText, ImageSquare, Kanban, List, LockSimple, Plus, Smil
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { duplicatePage, updatePage, type PagePatch } from '@/app/(frontend)/notebook-actions'
+import { duplicatePage, rememberOpenedPage, updatePage, type PagePatch } from '@/app/(frontend)/notebook-actions'
 import { BlockEditor, SaveStatusText, type EditorHandle } from '@/components/editor/BlockEditor'
 import { NoteContext } from '@/components/editor/NoteContext'
 import { forgetTemplates } from '@/components/editor/TemplateBar'
@@ -22,6 +22,7 @@ import { IconPicker } from './IconPicker'
 import { useNoteEditorContext, useNotebook } from './NotebookShell'
 import { NoteIcon } from './NoteIcon'
 import { PageCover, useCoverPicker } from './PageCover'
+import { focusTitleEnd, onTitleKeyDown } from './titleKeys'
 import { PageMenu, type PageStyle } from './PageMenu'
 
 export type PageData = {
@@ -76,6 +77,7 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
   const [templateFor, setTemplateFor] = useState(page.templateFor)
   const [showHistory, setShowHistory] = useState(false)
   const editor = useRef<EditorHandle>(null)
+  const titleEl = useRef<HTMLTextAreaElement>(null)
   const [embedded, setEmbedded] = useState(() => embeddedPageIds(page.content))
   const [body, setBody] = useState<{ status: SaveStatus; error: string | null }>({ status: 'idle', error: null })
   const { enqueue, status, error } = useSaveQueue()
@@ -164,6 +166,11 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
     }
   }
 
+  // Opening the notebook later comes back to this page.
+  useEffect(() => {
+    void rememberOpenedPage(id)
+  }, [id])
+
   // Notion's Ctrl/⌘+Alt+T: open every toggle, or close them all if none is shut.
   useEffect(() => {
     if (page.kind === 'board') return
@@ -221,7 +228,8 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
             </span>
           </span>
         </nav>
-        <span className="hidden shrink-0 px-1 sm:inline">
+        {/* Phones only show the status when a save failed. */}
+        <span className={`shrink-0 px-1 ${merged.status === 'error' ? '' : 'hidden sm:inline'}`}>
           <SaveStatusText status={merged.status} error={merged.error} />
         </span>
         {locked && (
@@ -322,16 +330,11 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
         </div>
 
         <textarea
+          ref={titleEl}
           value={title}
           onChange={(e) => changeTitle(e.target.value)}
           onBlur={flushTitle}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              flushTitle()
-              document.querySelector<HTMLElement>('.note-editor [contenteditable="true"]')?.focus()
-            }
-          }}
+          onKeyDown={(e) => onTitleKeyDown(e, { editor: locked ? null : editor.current, setTitle: changeTitle, flush: flushTitle })}
           readOnly={locked}
           rows={1}
           placeholder={UNTITLED}
@@ -366,6 +369,7 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
                 // A template page itself doesn't offer templates.
                 templateKind={templateFor ? undefined : 'page'}
                 editorHandle={editor}
+                onLeaveTop={() => focusTitleEnd(titleEl.current)}
                 onChange={(blocks) => {
                   rememberPageEdit(id, { content: blocks })
                   const next = embeddedPageIds(blocks)

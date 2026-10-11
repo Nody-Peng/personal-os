@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 type Props = { params: Promise<{ id: string }> }
 
-/** Opening a notebook goes back to the page edited last (a blank one if it's empty). */
+/** Opening a notebook goes back to the page opened last (a blank one if it's empty). */
 export default async function OpenNotebook({ params }: Props) {
   const { id: idParam } = await params
   const id = Number(idParam)
@@ -15,7 +15,7 @@ export default async function OpenNotebook({ params }: Props) {
   const notebook = await getNotebook(session, id)
   if (!notebook) notFound()
 
-  let pageId = await getLandingPageId(session, id)
+  let pageId = await getLandingPageId(session, id, notebook.lastPage)
   if (pageId == null) {
     const page = await session.payload.create({
       collection: 'note-pages',

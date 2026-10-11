@@ -19,7 +19,7 @@ export function toNotebookItem(doc: Notebook, pageCount = 0): NotebookItem {
 /** Every notebook (archived ones too) with its number of live pages. */
 export async function getNotebooks({ payload, user }: Session): Promise<NotebookItem[]> {
   const [notebooks, pages] = await Promise.all([
-    payload.find({ collection: 'notebooks', sort: ['position', 'id'], pagination: false, user, overrideAccess: false }),
+    payload.find({ collection: 'notebooks', sort: ['position', 'id'], depth: 0, pagination: false, user, overrideAccess: false }),
     payload.find({
       collection: 'note-pages',
       // Board cards are rows of their board, not pages of the notebook.
@@ -37,7 +37,7 @@ export async function getNotebooks({ payload, user }: Session): Promise<Notebook
 }
 
 export async function getNotebook({ payload, user }: Session, id: number): Promise<Notebook | null> {
-  return payload.findByID({ collection: 'notebooks', id, user, overrideAccess: false, disableErrors: true })
+  return payload.findByID({ collection: 'notebooks', id, depth: 0, user, overrideAccess: false, disableErrors: true })
 }
 
 /** The sidebar tree: every live page of a notebook, without content. */
@@ -61,8 +61,22 @@ export async function getPage({ payload, user }: Session, id: number): Promise<N
   return payload.findByID({ collection: 'note-pages', id, depth: 0, user, overrideAccess: false, disableErrors: true })
 }
 
-/** Where opening a notebook lands: the last edited page, else the first one. */
-export async function getLandingPageId({ payload, user }: Session, notebookId: number): Promise<number | null> {
+/** Where opening a notebook lands: the page opened last, else the last edited one, else the first. */
+export async function getLandingPageId({ payload, user }: Session, notebookId: number, lastPage?: unknown): Promise<number | null> {
+  // The page opened last, while it is still live (findByID skips the trash) and in this notebook.
+  const lastId = lastPage == null ? null : idOf(lastPage)
+  if (lastId != null) {
+    const page = await payload.findByID({
+      collection: 'note-pages',
+      id: lastId,
+      depth: 0,
+      select: { notebook: true },
+      user,
+      overrideAccess: false,
+      disableErrors: true,
+    })
+    if (page && idOf(page.notebook) === notebookId) return page.id
+  }
   const find = (sort: string[], editedOnly: boolean) =>
     payload.find({
       collection: 'note-pages',

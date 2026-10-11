@@ -34,6 +34,14 @@ export const Notebooks: CollectionConfig = {
         { name: 'archived', label: '已封存', type: 'checkbox', defaultValue: false, index: true },
       ],
     },
+    {
+      // Opening the notebook returns here (notebooks/[id]/page.tsx); set by rememberOpenedPage.
+      name: 'lastPage',
+      label: '上次開啟的頁面',
+      type: 'relationship',
+      relationTo: 'note-pages',
+      admin: { readOnly: true },
+    },
   ],
   hooks: {
     // Pages can't outlive their notebook (trashed ones included).

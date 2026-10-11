@@ -2,7 +2,8 @@
 // between blocks) selects whole blocks; then Backspace/Delete removes them,
 // ⌘C / ⌘X copies or cuts them, ⌘D duplicates them, ↑ / ↓ move the selection
 // (Shift extends it), Enter edits the last one and Esc lets go. Dragging the ⋮⋮
-// handle of any selected block moves them all (BlockMenu).
+// handle of any selected block moves them all (BlockMenu). While typing, ⌘A
+// selects the block's text and then every block, and ⌘D duplicates the block.
 //
 // The selection is a ProseMirror selection (`BlockSelection`, a run of sibling
 // blocks), so the highlight follows it and the drop that moves blocks deletes
@@ -10,6 +11,7 @@
 // outside the text, so typing (and the IME) can never land in the selected blocks.
 
 import { createExtension, getNodeById, type ExtensionOptions } from '@blocknote/core'
+import { SuggestionMenu } from '@blocknote/core/extensions'
 import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from 'prosemirror-model'
 import { Plugin, PluginKey, Selection, TextSelection } from 'prosemirror-state'
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view'
@@ -99,9 +101,19 @@ function withoutIds<B extends { id?: string; children: B[] }>(block: B): B {
   return { ...block, id: undefined, children: block.children.map(withoutIds) }
 }
 
-// Where a box may start: not on text, controls, menus or the block handles.
+// Where a box may start: not on text, controls, menus or the block handles, nor
+// on BlockNote's strip below the last block (a click there starts a new line).
 const NOT_A_BOX =
-  'button, a, input, textarea, select, label, summary, header, nav, [role="button"], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [role="slider"], [role="toolbar"], [data-no-block-select], .bn-side-menu, .bn-block-content'
+  'button, a, input, textarea, select, label, summary, header, nav, [role="button"], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [role="slider"], [role="toolbar"], [data-no-block-select], .bn-side-menu, .bn-block-content, .bn-trailing-block'
+// The multi-column package resizes columns from this close to the edge between two.
+const COLUMN_RESIZE_EDGE = 20
+
+function onColumnEdge(target: Element, x: number): boolean {
+  const column = target.closest('.bn-block-column')
+  if (!column) return false
+  const r = column.getBoundingClientRect()
+  return (x < r.left + COLUMN_RESIZE_EDGE && column.previousElementSibling != null) || (x > r.right - COLUMN_RESIZE_EDGE && column.nextElementSibling != null)
+}
 // Clicks here keep the selection: the ⋮⋮ handle (drag, menu) and its menu.
 const KEEPS_SELECTION = '.bn-side-menu, [role="menu"], [role="menuitem"]'
 // How far above or below an editor a box may start in its surrounding zone.
@@ -308,6 +320,7 @@ export const blockSelection = createExtension(({ editor }: ExtensionOptions<unde
     if (!window.matchMedia('(pointer: fine)').matches) return false
     const dom = view().dom
     if (target.closest(NOT_A_BOX) || (target instanceof HTMLElement && target.isContentEditable && !dom.contains(target))) return false
+    if (onColumnEdge(target, e.clientX)) return false
     const modal = target.closest('[aria-modal="true"]')
     if (modal && !modal.contains(dom)) return false
     const own = dom.closest('.bn-container')
@@ -433,8 +446,42 @@ export const blockSelection = createExtension(({ editor }: ExtensionOptions<unde
     boxSelect(e, insideText)
   }
 
+  /**
+   * Notion's ⌘A: the block's own text first; pressed again (or in an empty
+   * block) every block, so Delete clears dividers and pictures too and ⌘C
+   * copies whole blocks.
+   */
+  function selectAll(): boolean {
+    if (!editor.isEditable || editor.getExtension(SuggestionMenu)?.shown()) return false
+    const state = view().state
+    const sel = state.selection
+    if (sel instanceof TextSelection && sel.$from.sameParent(sel.$to) && sel.$from.parent.isTextblock) {
+      const start = sel.$from.start()
+      const end = sel.$from.end()
+      if (end > start && (sel.from !== start || sel.to !== end)) {
+        view().dispatch(state.tr.setSelection(TextSelection.create(state.doc, start, end)))
+        return true
+      }
+    }
+    select(BlockSelection.create(state.doc, 1, 1 + state.doc.firstChild!.content.size))
+    return true
+  }
+
+  /** Notion's ⌘D while typing: a copy of this block below it, caret at its end (the browser would bookmark the page). */
+  function duplicateCurrent(): boolean {
+    if (!editor.isEditable || editor.getExtension(SuggestionMenu)?.shown()) return false
+    const { block } = editor.getTextCursorPosition()
+    const [copy] = editor.insertBlocks([withoutIds(block)], block, 'after')
+    if (copy) caretAt(copy.id, 'end')
+    return true
+  }
+
   return {
     key: 'blockSelection',
+    keyboardShortcuts: {
+      'Mod-a': () => selectAll(),
+      'Mod-d': () => duplicateCurrent(),
+    },
     prosemirrorPlugins: [
       new Plugin({
         key: new PluginKey('blockSelection'),

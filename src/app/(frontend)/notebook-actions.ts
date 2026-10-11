@@ -139,7 +139,7 @@ export async function updateNotebook(id: number, patch: NotebookPatch): Promise<
     if ('coverColor' in patch) data.coverColor = cleanColor(patch.coverColor)
     if ('pattern' in patch) data.pattern = cleanPattern(patch.pattern)
     if ('archived' in patch) data.archived = patch.archived === true
-    await payload.update({ collection: 'notebooks', id: asId(id), data, user, overrideAccess: false })
+    await payload.update({ collection: 'notebooks', id: asId(id), data, depth: 0, user, overrideAccess: false })
     refreshShelf()
     return { ok: true }
   } catch (error) {
@@ -334,7 +334,8 @@ function cleanCover(value: unknown): string {
   return url
 }
 
-export async function updatePage(id: number, patch: PagePatch): Promise<ActionResult> {
+/** `savedAt` (server clock) lets the editor tell a page render made before this save from a newer one (lib/noteCache.ts). */
+export async function updatePage(id: number, patch: PagePatch): Promise<ActionResult<{ savedAt: number }>> {
   try {
     const session = await requireActionSession()
     const { payload, user } = session
@@ -359,7 +360,7 @@ export async function updatePage(id: number, patch: PagePatch): Promise<ActionRe
     if ('title' in data || 'content' in data) data.editedAt = new Date().toISOString()
     if ('content' in data) await keepSnapshot(session, asId(id))
     await payload.update({ collection: 'note-pages', id: asId(id), data, user, overrideAccess: false })
-    return { ok: true }
+    return { ok: true, data: { savedAt: Date.now() } }
   } catch (error) {
     return fail(error)
   }
@@ -817,6 +818,28 @@ export async function getPageDetail(id: number): Promise<ActionResult<PageDetail
         boardId: page.kind === 'item' ? idOf(page.parent) : null,
       },
     }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/** Remembers the page opened last in its notebook: opening the notebook goes back there. */
+export async function rememberOpenedPage(pageId: number): Promise<ActionResult> {
+  try {
+    const { payload, user } = await requireActionSession()
+    const page = await payload.findByID({
+      collection: 'note-pages',
+      id: asId(pageId),
+      depth: 0,
+      select: { notebook: true },
+      user,
+      overrideAccess: false,
+    })
+    const notebook = idOf(page.notebook)
+    if (notebook != null) {
+      await payload.update({ collection: 'notebooks', id: notebook, data: { lastPage: page.id }, depth: 0, user, overrideAccess: false })
+    }
+    return { ok: true }
   } catch (error) {
     return fail(error)
   }

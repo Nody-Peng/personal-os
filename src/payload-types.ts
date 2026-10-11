@@ -385,6 +385,7 @@ export interface Notebook {
   pattern: 'cloth' | 'plaid' | 'pinstripe' | 'dots' | 'marble' | 'diamond';
   position?: number | null;
   archived?: boolean | null;
+  lastPage?: (number | null) | NotePage;
   updatedAt: string;
   createdAt: string;
 }
@@ -823,6 +824,7 @@ export interface NotebooksSelect<T extends boolean = true> {
   pattern?: T;
   position?: T;
   archived?: T;
+  lastPage?: T;
   updatedAt?: T;
   createdAt?: T;
 }

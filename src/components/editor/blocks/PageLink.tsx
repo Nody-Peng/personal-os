@@ -9,6 +9,7 @@ import { primePageLink, usePageLink } from '@/lib/pageLinks'
 import { UNTITLED } from '@/lib/notes'
 import { useNoteContext } from '../NoteContext'
 import { NoteIcon } from '@/components/notebooks/NoteIcon'
+import { isFresh, useClickAway } from './freshBlock'
 
 /**
  * A page inside the text. `child` is a sub-page created right here (it also
@@ -36,6 +37,7 @@ export const PageLink = createReactBlockSpec(
         if (mode === 'link' && editor.isEditable) {
           return (
             <LinkPicker
+              fresh={isFresh(block)}
               exclude={ctx?.pageId}
               onPick={(page) => {
                 primePageLink(page)
@@ -98,12 +100,31 @@ export const PageLink = createReactBlockSpec(
   },
 )
 
+type PickerProps = { exclude?: number; onPick: (page: PageLinkInfo) => void; onCancel: () => void }
+
+/**
+ * Just inserted, the search is open; a link never chosen (found on a later
+ * visit) is a placeholder that opens it. Clicking away drops the empty block, as in Notion.
+ */
+function LinkPicker({ fresh, ...props }: PickerProps & { fresh: boolean }) {
+  const [open, setOpen] = useState(fresh)
+  if (open) return <LinkSearch {...props} />
+  return (
+    <button type="button" contentEditable={false} onClick={() => setOpen(true)} className="note-pagelink">
+      <ArrowUpRight size={18} className="shrink-0" />
+      <span className="truncate">選擇要連結的頁面</span>
+    </button>
+  )
+}
+
 /** Inline search for "link to page": any notebook, by title. */
-function LinkPicker({ exclude, onPick, onCancel }: { exclude?: number; onPick: (page: PageLinkInfo) => void; onCancel: () => void }) {
+function LinkSearch({ exclude, onPick, onCancel }: PickerProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<PageLinkInfo[]>([])
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const box = useRef<HTMLDivElement>(null)
+  useClickAway(box, onCancel)
 
   useEffect(() => {
     input.current?.focus()
@@ -124,7 +145,7 @@ function LinkPicker({ exclude, onPick, onCancel }: { exclude?: number; onPick: (
   }, [query, exclude])
 
   return (
-    <div className="note-linkpicker" contentEditable={false} data-own-escape>
+    <div ref={box} className="note-linkpicker" contentEditable={false} data-own-escape="focus">
       <div className="flex items-center gap-2 border-b border-line px-3">
         <MagnifyingGlass size={16} className="text-muted" />
         <input

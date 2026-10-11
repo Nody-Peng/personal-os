@@ -3,6 +3,9 @@ import { blocksToText, countWords } from '@/lib/blocks'
 import { isRecordedLog } from '@/lib/dailyLog'
 import { isDay, isMonth, isoWeek, isoWeekYear } from '@/lib/day'
 import { cleanNoteIcon, parseNoteIcon } from '@/lib/noteIcons'
+import { markSaved, rememberLocal, withLocal } from '@/lib/noteCache'
+import { escapeHandledElsewhere } from '@/lib/escape'
+import { startsWord } from '@/components/editor/menuTriggers'
 
 describe('isDay / isMonth', () => {
   it('accepts real days and months only', () => {
@@ -84,5 +87,52 @@ describe('page icons', () => {
     expect(parseNoteIcon('/api/media/file/icon.png')).toEqual({ kind: 'image', url: '/api/media/file/icon.png' })
     expect(parseNoteIcon('ph:lightbulb:green')).toEqual({ kind: 'phosphor', name: 'lightbulb', color: 'green' })
     expect(parseNoteIcon('')).toBeNull()
+  })
+})
+
+describe('slash and emoji menus', () => {
+  it('open where a word starts, not inside 1/2, and/or or 10:30', () => {
+    expect(startsWord('', false)).toBe(true)
+    expect(startsWord(' ', false)).toBe(true)
+    expect(startsWord('0', false)).toBe(false) // 10:30
+    expect(startsWord('1', true)).toBe(false) // 1/2
+    expect(startsWord('d', true)).toBe(false) // and/or
+    expect(startsWord(':', true)).toBe(false) // https://
+    // Chinese has no spaces: / after 和 still opens the slash menu, : does not.
+    expect(startsWord('和', true)).toBe(true)
+    expect(startsWord('和', false)).toBe(false)
+  })
+})
+
+describe('noteCache', () => {
+  it('keeps local text over a page render made before its last save', () => {
+    const key = 'doc:test:saved-at'
+    expect(withLocal(key, 'server-a', 100)).toBe('server-a')
+    rememberLocal(key, 'local')
+    markSaved(key, 'local', 1_000)
+    // Rendered at 900 (before the save at 1000) and never mounted: older than the local copy.
+    expect(withLocal(key, 'server-old', 900)).toBe('local')
+    // Rendered after the save (e.g. edited on another device): the server wins.
+    expect(withLocal(key, 'server-new', 2_000)).toBe('server-new')
+  })
+})
+
+describe('escapeHandledElsewhere', () => {
+  it('counts a picker in the text only while it has the focus', () => {
+    const picker = document.createElement('div')
+    picker.setAttribute('data-own-escape', 'focus')
+    const input = document.createElement('input')
+    picker.appendChild(input)
+    document.body.appendChild(picker)
+    expect(escapeHandledElsewhere()).toBe(false)
+    input.focus()
+    expect(escapeHandledElsewhere()).toBe(true)
+    input.blur()
+    const menu = document.createElement('div')
+    menu.setAttribute('data-own-escape', '')
+    document.body.appendChild(menu)
+    expect(escapeHandledElsewhere()).toBe(true)
+    picker.remove()
+    menu.remove()
   })
 })

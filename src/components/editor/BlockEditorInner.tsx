@@ -11,6 +11,7 @@ import {
   SuggestionMenuController,
   useCreateBlockNote,
 } from '@blocknote/react'
+import { SuggestionMenu } from '@blocknote/core/extensions'
 import { multiColumnDropCursor } from '@blocknote/xl-multi-column'
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { isBlankDocument } from '@/lib/blocks'
@@ -24,15 +25,22 @@ import { scrollToBlock } from './blocks/TableOfContents'
 import { codeHighlighting } from './codeHighlighter'
 import { emojiItems } from './emojiItems'
 import { IMAGE_SELECTOR, ImageLightbox, ImageZoomButton, imagesIn, LightboxContext, type LightboxImage } from './ImageLightbox'
+import { emojiOpens, slashOpens } from './menuTriggers'
+import { MobileBlockButtons } from './MobileBlockButtons'
 import { useNoteContext } from './NoteContext'
 import { PasteUrlMenu, type PasteUrlMenuHandle } from './PasteUrlMenu'
 import { editorDictionary, editorSchema, notionShortcuts, rankItems, slashItems } from './schema'
 import { TemplateBar } from './TemplateBar'
+import { setLeaveTop, titleNavigation } from './titleNavigation'
 
 /** What a page can do to its editor from outside. */
 export type EditorHandle = {
   /** Replaces the whole document (a restored version); it saves like any edit. */
   replace: (blocks: unknown[]) => void
+  /** Enter in the page title: a new first line holding `text` (what followed the title's caret), caret at its start. */
+  enterFromTitle: (text: string) => void
+  /** ↓ in the page title: the caret to the start of the first block. */
+  focusStart: () => void
 }
 
 type Props = {
@@ -46,6 +54,8 @@ type Props = {
   /** While the note is empty, offer the templates made for this kind of note. */
   templateKind?: TemplateKind
   handle?: Ref<EditorHandle>
+  /** ↑ / Backspace at the very top of the text: back to the page title (titleNavigation). */
+  onLeaveTop?: () => void
 }
 
 async function upload(file: File): Promise<string> {
@@ -67,6 +77,7 @@ export default function BlockEditorInner({
   editable = true,
   templateKind,
   handle,
+  onLeaveTop,
 }: Props) {
   const note = useNoteContext()
   const noteRef = useRef(note)
@@ -83,9 +94,20 @@ export default function BlockEditorInner({
       ...editorDictionary,
       placeholders: { ...editorDictionary.placeholders, default: placeholder, emptyDocument: placeholder },
     },
-    extensions: [notionShortcuts, codeHighlighting, blockSelection()],
+    extensions: [notionShortcuts, codeHighlighting, blockSelection(), titleNavigation],
     dropCursor: multiColumnDropCursor,
     uploadFile: allowUploads ? upload : undefined,
+    links: {
+      // With a mouse a click opens the link, as in Notion. On a touch screen a tap
+      // has to place the caret (or a linked line could never be edited); the link
+      // toolbar that then appears has 開啟.
+      onClick: (event) => {
+        if (window.matchMedia('(pointer: coarse)').matches) return false
+        const href = event.target instanceof Element ? event.target.closest('a')?.href : undefined
+        if (href) window.open(href, '_blank', 'noopener,noreferrer')
+        return true
+      },
+    },
     // A pasted web address becomes a link, then asks: keep, bookmark or embed?
     pasteHandler: ({ event, editor, defaultPasteHandler }) => {
       const text = event.clipboardData?.getData('text/plain') ?? ''
@@ -104,6 +126,12 @@ export default function BlockEditorInner({
     },
   })
 
+  // ↑ / Backspace at the top go back to the page title (titleNavigation).
+  useEffect(() => {
+    setLeaveTop(editor, onLeaveTop)
+    return () => setLeaveTop(editor, undefined)
+  }, [editor, onLeaveTop])
+
   // A link to a block (#block-<id>, from 複製區塊連結) scrolls there once it is drawn.
   useEffect(() => {
     const target = decodeURIComponent(window.location.hash).match(/^#block-(.+)$/)?.[1]
@@ -117,7 +145,39 @@ export default function BlockEditorInner({
     },
     [editor],
   )
-  useImperativeHandle(handle, () => ({ replace }), [replace])
+  const enterFromTitle = useCallback(
+    (text: string) => {
+      const first = editor.document[0]
+      const emptyFirst = first?.type === 'paragraph' && (!Array.isArray(first.content) || first.content.length === 0) && !first.children.length
+      if (emptyFirst) {
+        if (text) editor.updateBlock(first, { content: text })
+        editor.setTextCursorPosition(first, 'start')
+      } else if (first) {
+        const [line] = editor.insertBlocks([{ type: 'paragraph', content: text }], first, 'before')
+        editor.setTextCursorPosition(line, 'start')
+      }
+      editor.focus()
+    },
+    [editor],
+  )
+  const focusStart = useCallback(() => {
+    const first = editor.document[0]
+    try {
+      if (first) editor.setTextCursorPosition(first, 'start')
+    } catch {
+      // A first block without text (picture, board…): just focus the editor.
+    }
+    editor.focus()
+  }, [editor])
+  useImperativeHandle(handle, () => ({ replace, enterFromTitle, focusStart }), [replace, enterFromTitle, focusStart])
+
+  const closeIfEmpty = useCallback(
+    <T,>(items: T[]): T[] => {
+      if (!items.length) editor.getExtension(SuggestionMenu)?.closeMenu()
+      return items
+    },
+    [editor],
+  )
 
   // An empty note offers templates (TemplateBar) until something is written.
   const [blank, setBlank] = useState(() => isBlankDocument(editor.document))
@@ -178,10 +238,29 @@ export default function BlockEditorInner({
           if (templateKind) setBlank(isBlankDocument(editor.document))
         }}
       >
-        <SuggestionMenuController triggerCharacter="/" getItems={async (query) => rankItems(slashItems(editor, noteRef.current), query)} />
-        <GridSuggestionMenuController triggerCharacter=":" columns={10} minQueryLength={1} getItems={(query) => emojiItems(editor, query)} />
+        {/* With nothing matching, a menu closes so Enter and the arrows work on the text again. */}
+        <SuggestionMenuController
+          triggerCharacter="/"
+          shouldOpen={slashOpens}
+          getItems={async (query) => closeIfEmpty(rankItems(slashItems(editor, noteRef.current), query))}
+        />
+        <GridSuggestionMenuController
+          triggerCharacter=":"
+          shouldOpen={emojiOpens}
+          columns={10}
+          minQueryLength={1}
+          // One Latin letter shows nothing yet (emojiItems), but more may follow.
+          getItems={async (query) => {
+            const items = await emojiItems(editor, query)
+            return /^[\x20-\x7e]$/.test(query) ? items : closeIfEmpty(items)
+          }}
+        />
         <FormattingToolbarController
-          formattingToolbar={() => <FormattingToolbar>{[...getFormattingToolbarItems(), <ImageZoomButton key="imageZoom" />]}</FormattingToolbar>}
+          formattingToolbar={() => (
+            <FormattingToolbar>
+              {[<MobileBlockButtons key="blocks" />, ...getFormattingToolbarItems(), <ImageZoomButton key="imageZoom" />]}
+            </FormattingToolbar>
+          )}
         />
         <NoteSideMenu />
         <PasteUrlMenu ref={pasteMenu} editor={editor} />
