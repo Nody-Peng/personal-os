@@ -62,11 +62,21 @@ export function BookOpenProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const pathnameRef = useRef(pathname)
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
+
+  // An animation that never finishes (the tab went to the background, say)
+  // still has to end on the page that was asked for.
   useEffect(() => {
     if (!opening) return
-    const timer = window.setTimeout(done, GIVE_UP_AFTER)
+    const timer = window.setTimeout(() => {
+      if (!arrivedAt(pathnameRef.current, opening.href)) router.push(opening.href)
+      done()
+    }, GIVE_UP_AFTER)
     return () => window.clearTimeout(timer)
-  }, [opening, done])
+  }, [opening, done, router])
 
   const arrived = opening ? arrivedAt(pathname, opening.href) : false
 

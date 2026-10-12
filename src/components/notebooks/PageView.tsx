@@ -13,7 +13,7 @@ import { loadBoard, renameItem } from '@/lib/boardStore'
 import { pageWithEdits, peekLocal, rememberPageEdit, usePageStamp } from '@/lib/noteCache'
 import { MAX_PAGE_TITLE, UNTITLED, ancestorsOf, childrenOf, embeddedPageIds, type PageNode } from '@/lib/notes'
 import { TEMPLATE_KINDS, type PageFont, type TemplateKind } from '@/lib/options'
-import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
+import { useLeaveGuard, useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 import { Backlinks } from './Backlinks'
 import { BoardView } from './board/BoardView'
 import { HistoryDialog } from './HistoryDialog'
@@ -80,11 +80,11 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
   const titleEl = useRef<HTMLTextAreaElement>(null)
   const [embedded, setEmbedded] = useState(() => embeddedPageIds(page.content))
   const [body, setBody] = useState<{ status: SaveStatus; error: string | null }>({ status: 'idle', error: null })
-  const { enqueue, status, error } = useSaveQueue()
+  const { enqueue, busy, status, error } = useSaveQueue()
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingTitle = useRef<string | null>(null)
   const id = page.id
-  const note = useNoteEditorContext(id)
+  const note = useNoteEditorContext(id, page.kind !== 'item')
   const locked = look.locked
   // The sidebar star and this one share the tree's copy; board cards have none.
   const canFavorite = page.kind !== 'item'
@@ -99,6 +99,7 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
     pendingTitle.current = null
   }, [save])
   useEffect(() => flushTitle, [flushTitle])
+  useLeaveGuard(() => pendingTitle.current != null || busy(), flushTitle)
 
   const changeTitle = (value: string) => {
     const next = value.replace(/\n/g, ' ').slice(0, MAX_PAGE_TITLE)
@@ -146,6 +147,7 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
 
   const duplicate = async () => {
     flushTitle()
+    await editor.current?.save()
     const result = await duplicatePage(id)
     if (!result.ok || !result.data) return notify(result.ok ? '建立副本失敗' : result.error)
     restored(result.data.nodes)
@@ -267,7 +269,14 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
           onPrint={() => window.print()}
           onToggles={page.kind === 'board' ? undefined : setToggles}
           onTrash={() => trash(id, page.boardId)}
-          onHistory={page.kind === 'board' ? undefined : () => setShowHistory(true)}
+          onHistory={
+            page.kind === 'board'
+              ? undefined
+              : () => {
+                  // Its first step keeps the current version: make that include the last keystrokes.
+                  void editor.current?.save().then(() => setShowHistory(true))
+                }
+          }
           template={page.kind === 'board' ? undefined : { value: templateFor, onChange: changeTemplate }}
         />
       </header>
@@ -383,7 +392,8 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
 
         <Backlinks pageId={id} />
 
-        {page.kind !== 'board' && (kids.length > 0 || !locked) && (
+        {/* Boards list their cards, and a card can't hold pages. */}
+        {page.kind !== 'board' && page.kind !== 'item' && (kids.length > 0 || !locked) && (
           <section aria-label="子頁面" className="mt-10 border-t border-line pt-4 print:hidden">
             {kids.length > 0 && (
               <ul className="mb-1">

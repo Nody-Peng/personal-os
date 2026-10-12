@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useCallback, useEffect, useRef, useState, type Ref } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { saveDailyLog } from '@/app/(frontend)/actions'
 import { saveMonthNote, saveWeekNote, updateTask } from '@/app/(frontend)/journal-actions'
 import { updatePage } from '@/app/(frontend)/notebook-actions'
@@ -9,9 +9,12 @@ import type { ActionResult } from '@/lib/actionUtils'
 import type { TemplateKind } from '@/lib/options'
 import { markSaved, rememberLocal, useRenderStamp, withLocal } from '@/lib/noteCache'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
-import type { EditorHandle } from './BlockEditorInner'
+import type { EditorHandle as InnerHandle } from './BlockEditorInner'
 
-export type { EditorHandle } from './BlockEditorInner'
+export type EditorHandle = InnerHandle & {
+  /** Saves what was typed (skipping the debounce) and waits until it is stored. */
+  save: () => Promise<void>
+}
 
 const Inner = dynamic(() => import('./BlockEditorInner'), {
   ssr: false,
@@ -101,7 +104,7 @@ export function BlockEditor({
   editorHandle,
   onLeaveTop,
 }: Props) {
-  const { enqueue, status, error } = useSaveQueue()
+  const { enqueue, settled, status, error } = useSaveQueue()
   // Every editor records its latest document (so a board card edited in the
   // side peek and on its own page share one record); only editors fed by a
   // server render read it back.
@@ -201,6 +204,21 @@ export function BlockEditor({
     }
   }, [flush])
 
+  const inner = useRef<InnerHandle>(null)
+  useImperativeHandle(
+    editorHandle,
+    () => ({
+      replace: (blocks) => inner.current?.replace(blocks),
+      enterFromTitle: (text) => inner.current?.enterFromTitle(text),
+      focusStart: () => inner.current?.focusStart(),
+      save: () => {
+        flush()
+        return settled()
+      },
+    }),
+    [flush, settled],
+  )
+
   useEffect(() => onStatusRef.current?.(status, error), [status, error])
 
   return (
@@ -213,7 +231,7 @@ export function BlockEditor({
         allowUploads={allowUploads}
         editable={editable}
         templateKind={templateKind}
-        handle={editorHandle}
+        handle={inner}
         onLeaveTop={onLeaveTop}
       />
       {/* Editors without their own status line still must not fail silently. */}

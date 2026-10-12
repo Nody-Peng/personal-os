@@ -40,8 +40,15 @@ describe('isPrivateAddress', () => {
     }
   })
 
+  it('blocks IPv4 inside IPv6 in the hex form URLs rewrite it to', () => {
+    // new URL('http://[::ffff:169.254.169.254]/').hostname is [::ffff:a9fe:a9fe]
+    for (const ip of ['::ffff:a9fe:a9fe', '::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:0001', '::127.0.0.1', '::', 'fe80::1%eth0', '64:ff9b::1.2.3.4']) {
+      expect(isPrivateAddress(ip), ip).toBe(true)
+    }
+  })
+
   it('allows public addresses', () => {
-    for (const ip of ['8.8.8.8', '1.1.1.1', '172.32.0.1', '2606:4700:4700::1111']) {
+    for (const ip of ['8.8.8.8', '1.1.1.1', '172.32.0.1', '2606:4700:4700::1111', '::ffff:808:808', '::ffff:8.8.8.8']) {
       expect(isPrivateAddress(ip), ip).toBe(false)
     }
   })

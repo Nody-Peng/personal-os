@@ -7,6 +7,8 @@ import type { PageNode } from '@/lib/notes'
 export type NoteEditorContext = {
   notebookId: number
   pageId: number
+  /** False on a board card: cards can't hold sub-pages or boards. */
+  canHoldPages: boolean
   /** The notebook's page tree, for live titles. */
   pages: PageNode[]
   createChildPage: () => Promise<PageNode | null>

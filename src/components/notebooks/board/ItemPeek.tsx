@@ -10,7 +10,7 @@ import { dropItems, loadBoard, renameItem, useBoard } from '@/lib/boardStore'
 import { escapeHandledElsewhere } from '@/lib/escape'
 import { rememberPageEdit } from '@/lib/noteCache'
 import { MAX_PAGE_TITLE, UNTITLED } from '@/lib/notes'
-import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
+import { useLeaveGuard, useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 import { IconPicker } from '../IconPicker'
 import { Menu } from '../Menu'
 import { useNoteEditorContext, useNotebook } from '../NotebookShell'
@@ -61,12 +61,12 @@ export function ItemPeek({ id, onClose }: { id: number; onClose: () => void }) {
 function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) {
   const { patchPage, openPeek } = useNotebook()
   const board = useBoard(page.boardId ?? 0)
-  const note = useNoteEditorContext(page.id)
+  const note = useNoteEditorContext(page.id, false)
   const [title, setTitle] = useState(page.title)
   const [icon, setIcon] = useState(page.icon)
   const [picking, setPicking] = useState(false)
   const [body, setBody] = useState<{ status: SaveStatus; error: string | null }>({ status: 'idle', error: null })
-  const { enqueue, status, error } = useSaveQueue()
+  const { enqueue, busy, status, error } = useSaveQueue()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef<string | null>(null)
   const titleEl = useRef<HTMLTextAreaElement>(null)
@@ -84,6 +84,7 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
     flushRef.current = flush
   })
   useEffect(() => () => flushRef.current(), [])
+  useLeaveGuard(() => pending.current != null || busy(), flush)
 
   const rename = (value: string) => {
     const next = value.replace(/\n/g, ' ').slice(0, MAX_PAGE_TITLE)
@@ -106,6 +107,7 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
 
   const duplicate = async () => {
     flush()
+    await editor.current?.save()
     const result = await duplicatePage(page.id)
     if (!result.ok || !result.data) return setBody({ status: 'error', error: result.ok ? '建立副本失敗' : result.error })
     if (page.boardId) await loadBoard(page.boardId)

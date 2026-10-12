@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { updatePage } from '@/app/(frontend)/notebook-actions'
 import { addItem, moveCard, renameBoard, useBoard } from '@/lib/boardStore'
+import { rememberPageEdit } from '@/lib/noteCache'
 import { UNTITLED, columnOf, type BoardItem } from '@/lib/notes'
 import { ITEM_STATUSES, type ItemStatus } from '@/lib/options'
 import { reportNoteError } from '@/lib/uploadMedia'
@@ -70,6 +71,7 @@ export function BoardView({ boardId, embedded = false }: { boardId: number; embe
     setTitle(value)
     renameBoard(boardId, value)
     patchPage(boardId, { title: value.trim() })
+    rememberPageEdit(boardId, { title: value })
     pendingTitle.current = value
     if (titleTimer.current) clearTimeout(titleTimer.current)
     titleTimer.current = setTimeout(saveTitle, 600)

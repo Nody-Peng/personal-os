@@ -2,7 +2,7 @@
 
 import { ArrowsDownUp, CaretRight, Copy, DotsThree, FileText, Kanban, Plus, Star, Trash } from '@phosphor-icons/react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { duplicatePage, updatePage } from '@/app/(frontend)/notebook-actions'
 import { UNTITLED, childrenOf, subtreeIds, type PageNode } from '@/lib/notes'
 import { Menu } from './Menu'
@@ -14,29 +14,43 @@ type Drop = { id: number; zone: Zone } | null
 
 const INDENT = 14
 
+/** Above, into or below a row, by where the pointer is on it. */
+function zoneAt(e: React.DragEvent): Zone {
+  const r = e.currentTarget.getBoundingClientRect()
+  const y = (e.clientY - r.top) / r.height
+  return y < 0.28 ? 'before' : y > 0.72 ? 'after' : 'inside'
+}
+
 /** The page tree; rows can be dragged above, below or into each other (desktop). */
 export function PageTree() {
   const { pages, move } = useNotebook()
-  const [dragging, setDragging] = useState<number | null>(null)
+  const [dragging, setDraggingState] = useState<number | null>(null)
   const [drop, setDrop] = useState<Drop>(null)
+  // Drag events can outrun a re-render (a quick drop lands before the last
+  // dragover's state does): handlers read the dragged page from a ref and the
+  // drop works out its own zone.
+  const draggingRef = useRef<number | null>(null)
+  const setDragging = (id: number | null) => {
+    draggingRef.current = id
+    setDraggingState(id)
+  }
 
   const roots = childrenOf(pages, null)
-  const blocked = dragging != null ? new Set(subtreeIds(pages, dragging)) : new Set<number>()
+  const blockedBy = (id: number | null) => (id != null ? new Set(subtreeIds(pages, id)) : new Set<number>())
+  const blocked = blockedBy(dragging)
 
-  const finish = () => {
-    if (dragging != null && drop) {
-      const target = pages.find((p) => p.id === drop.id)
-      if (target && !blocked.has(target.id)) {
-        if (drop.zone === 'inside') move(dragging, target.id, childrenOf(pages, target.id).filter((p) => p.id !== dragging).length)
-        else {
-          const siblings = childrenOf(pages, target.parent).filter((p) => p.id !== dragging)
-          const at = siblings.findIndex((p) => p.id === target.id)
-          move(dragging, target.parent, drop.zone === 'before' ? at : at + 1)
-        }
-      }
-    }
+  const finish = (targetId: number, zone: Zone) => {
+    const id = draggingRef.current
     setDragging(null)
     setDrop(null)
+    const target = pages.find((p) => p.id === targetId)
+    if (id == null || !target || blockedBy(id).has(target.id)) return
+    if (zone === 'inside') move(id, target.id, childrenOf(pages, target.id).filter((p) => p.id !== id).length)
+    else {
+      const siblings = childrenOf(pages, target.parent).filter((p) => p.id !== id)
+      const at = siblings.findIndex((p) => p.id === target.id)
+      move(id, target.parent, zone === 'before' ? at : at + 1)
+    }
   }
 
   if (!roots.length) return <p className="px-2 py-2 text-sm text-faint">還沒有頁面</p>
@@ -55,7 +69,7 @@ export function PageTree() {
           key={page.id}
           page={page}
           depth={0}
-          drag={{ dragging, drop, blocked, setDragging, setDrop, finish }}
+          drag={{ dragging, draggingRef, drop, blocked, blockedBy, setDragging, setDrop, finish }}
         />
       ))}
     </ul>
@@ -64,11 +78,13 @@ export function PageTree() {
 
 type DragState = {
   dragging: number | null
+  draggingRef: React.RefObject<number | null>
   drop: Drop
   blocked: Set<number>
+  blockedBy: (id: number | null) => Set<number>
   setDragging: (id: number | null) => void
   setDrop: (drop: Drop) => void
-  finish: () => void
+  finish: (targetId: number, zone: Zone) => void
 }
 
 function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: DragState }) {
@@ -92,14 +108,13 @@ function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: 
   const active = page.id === currentId
   const dropHere = drag.drop?.id === page.id ? drag.drop.zone : null
 
+  const accepts = () => drag.draggingRef.current != null && !drag.blockedBy(drag.draggingRef.current).has(page.id)
   const onDragOver = (e: React.DragEvent) => {
-    if (drag.dragging == null || drag.blocked.has(page.id)) return
+    if (!accepts()) return
     e.preventDefault()
     e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
-    const r = e.currentTarget.getBoundingClientRect()
-    const y = (e.clientY - r.top) / r.height
-    const zone: Zone = y < 0.28 ? 'before' : y > 0.72 ? 'after' : 'inside'
+    const zone = zoneAt(e)
     if (drag.drop?.id !== page.id || drag.drop.zone !== zone) drag.setDrop({ id: page.id, zone })
   }
 
@@ -112,10 +127,15 @@ function TreeItem({ page, depth, drag }: { page: PageNode; depth: number; drag: 
           e.dataTransfer.setData('text/plain', String(page.id))
           drag.setDragging(page.id)
         }}
+        onDragEnter={(e) => {
+          if (accepts()) e.preventDefault()
+        }}
         onDragOver={onDragOver}
         onDrop={(e) => {
+          if (!accepts()) return
           e.preventDefault()
-          drag.finish()
+          e.stopPropagation()
+          drag.finish(page.id, zoneAt(e))
         }}
         className={`group relative flex h-10 items-center gap-0.5 rounded-md pr-1 text-sm transition-colors md:h-8 ${
           active ? 'bg-surface font-medium text-ink-strong ring-1 ring-line' : 'text-ink hover:bg-sunken'

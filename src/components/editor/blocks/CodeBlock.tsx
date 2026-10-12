@@ -89,7 +89,7 @@ function BarButton({ label, active = false, onClick, children }: { label: string
       title={label}
       aria-label={label}
       aria-pressed={active}
-      className={`note-code-tool grid size-7 place-items-center rounded-md transition-colors hover:bg-black/5 hover:text-ink-strong ${active ? 'text-accent' : 'text-muted'}`}
+      className={`note-code-tool grid size-7 place-items-center rounded-md transition-colors hover:bg-sunken hover:text-ink-strong ${active ? 'text-accent' : 'text-muted'}`}
     >
       {children}
     </button>
@@ -170,7 +170,7 @@ function LanguagePicker({ value, disabled, onChange }: { value: string; disabled
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`程式語言：${codeLanguageName(value)}`}
-        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-ink-strong disabled:hover:bg-transparent"
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-sunken hover:text-ink-strong disabled:hover:bg-transparent"
       >
         {codeLanguageName(value)}
         {!disabled && <CaretDown size={10} weight="bold" />}
@@ -238,7 +238,7 @@ function CopyButton({ text }: { text: () => string }) {
       onClick={() => {
         void navigator.clipboard.writeText(text()).then(() => setCopied(true))
       }}
-      className="note-code-copy flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-ink-strong"
+      className="note-code-copy flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-sunken hover:text-ink-strong"
     >
       {copied ? <Check size={12} /> : <Copy size={12} />}
       {copied ? '已複製' : '複製'}

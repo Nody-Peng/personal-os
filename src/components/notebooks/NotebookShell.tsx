@@ -43,14 +43,15 @@ type NotebookContextValue = {
 
 const NotebookContext = createContext<NotebookContextValue | null>(null)
 
-/** Context for notebook-aware editor blocks inside page `pageId`. */
-export function useNoteEditorContext(pageId: number): NoteEditorContext {
+/** Context for notebook-aware editor blocks inside page `pageId` (`canHoldPages` false for a board card). */
+export function useNoteEditorContext(pageId: number, canHoldPages = true): NoteEditorContext {
   const { notebook, pages, restored, openPeek, notify } = useNotebook()
   const router = useRouter()
   return useMemo(
     () => ({
       notebookId: notebook.id,
       pageId,
+      canHoldPages,
       pages,
       openPeek,
       openPage: (id: number) => router.push(urlOf(notebook.id, id)),
@@ -73,7 +74,7 @@ export function useNoteEditorContext(pageId: number): NoteEditorContext {
         return result.data
       },
     }),
-    [notebook.id, pageId, pages, restored, openPeek, notify, router],
+    [notebook.id, pageId, canHoldPages, pages, restored, openPeek, notify, router],
   )
 }
 

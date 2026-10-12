@@ -65,7 +65,8 @@ function CopyBlockLinkItem({ children }: { children: ReactNode }) {
     <Components.Generic.Menu.Item
       className="bn-menu-item"
       onClick={() => {
-        const url = `${window.location.origin}${window.location.pathname}#block-${block.id}`
+        // Keep ?peek= / ?task=: the block may be in a side panel's page.
+        const url = `${window.location.origin}${window.location.pathname}${window.location.search}#block-${block.id}`
         void navigator.clipboard.writeText(url).then(() => reportNoteInfo('已複製區塊連結'))
       }}
     >

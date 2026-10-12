@@ -157,7 +157,9 @@ export async function createPage(notebookId: number, parentId: number | null): P
     const notebook = asId(notebookId)
     const parent = optionalId(parentId)
     const pages = (await treeOf(session, notebook)).map(toPageNode)
-    if (parent != null && !pages.some((p) => p.id === parent)) throw new Error('找不到上層頁面')
+    const host = parent == null ? null : pages.find((p) => p.id === parent)
+    if (parent != null && !host) throw new Error('找不到上層頁面')
+    if (host?.kind === 'item') throw new Error('看板卡片裡不能再放頁面')
     const siblings = childrenOf(pages, parent)
     const doc = await payload.create({
       collection: 'note-pages',
@@ -240,7 +242,9 @@ export async function duplicatePage(id: number): Promise<ActionResult<{ id: numb
             status: doc.status,
             startDate: doc.startDate,
             endDate: doc.endDate,
-            parentItem: copies.get(idOf(doc.parentItem) ?? -1) ?? idOf(doc.parentItem),
+            // Cards inside the copy are linked once every copy exists (below):
+            // a sub-card can come before its 上級項目 here.
+            parentItem: isRoot ? idOf(doc.parentItem) : null,
             cover: doc.cover,
             coverPosition: doc.coverPosition,
             font: doc.font,
@@ -256,11 +260,15 @@ export async function duplicatePage(id: number): Promise<ActionResult<{ id: numb
         copies.set(doc.id, created.id)
       }
       for (const doc of docs) {
-        if (!Array.isArray(doc.content)) continue
+        const data: { content?: unknown[]; parentItem?: number } = {}
+        if (Array.isArray(doc.content)) data.content = remapContent(doc.content, copies) as unknown[]
+        const parentItem = doc.id === pageId ? undefined : copies.get(idOf(doc.parentItem) ?? -1)
+        if (parentItem != null) data.parentItem = parentItem
+        if (!Object.keys(data).length) continue
         await payload.update({
           collection: 'note-pages',
           id: copies.get(doc.id)!,
-          data: { content: remapContent(doc.content, copies) as unknown[] },
+          data,
           user,
           overrideAccess: false,
           req,
@@ -449,13 +457,29 @@ export async function listTrash(notebookId: number): Promise<ActionResult<TrashI
         title: p.title ?? '',
         icon: p.icon ?? '',
         deletedAt: p.deletedAt!,
-        childCount: subtreeIds(trashed.map(toPageNode), p.id).length - 1,
+        childCount: trashBatch(trashed, p.id, p.deletedAt!).length - 1,
       }))
       .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
     return { ok: true, data: items }
   } catch (error) {
     return fail(error)
   }
+}
+
+type TrashedNode = Parameters<typeof toPageNode>[0] & { id: number; deletedAt?: string | null }
+
+/**
+ * A trashed page and what was trashed together with it (one shared
+ * `deletedAt`). Pages under it that were trashed earlier on their own are
+ * separate entries in the trash and are left alone.
+ */
+function trashBatch(all: TrashedNode[], pageId: number, deletedAt: string): number[] {
+  const stamp = Date.parse(deletedAt)
+  const byId = new Map(all.map((p) => [p.id, p]))
+  return subtreeIds(all.map(toPageNode), pageId).filter((pid) => {
+    const d = byId.get(pid)?.deletedAt
+    return d != null && Date.parse(d) === stamp
+  })
 }
 
 /** Restores a trashed page with whatever was trashed along with it. */
@@ -467,13 +491,7 @@ export async function restorePage(id: number): Promise<ActionResult<PageNode[]>>
     const page = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, trash: true, user, overrideAccess: false })
     if (!page.deletedAt) throw new Error('這一頁不在垃圾桶裡')
     const all = await treeOf(session, idOf(page.notebook)!, true)
-    const stamp = Date.parse(page.deletedAt)
-    const batch = new Set(
-      subtreeIds(all.map(toPageNode), pageId).filter((pid) => {
-        const deletedAt = all.find((p) => p.id === pid)?.deletedAt
-        return deletedAt && Date.parse(deletedAt) === stamp
-      }),
-    )
+    const batch = new Set(trashBatch(all, pageId, page.deletedAt))
     const ids = [...batch]
 
     // If its parent is still in the trash, bring it back at the top level. A
@@ -514,7 +532,7 @@ export async function restorePage(id: number): Promise<ActionResult<PageNode[]>>
   }
 }
 
-/** Permanently deletes a trashed page and the trashed pages under it. */
+/** Permanently deletes a trashed page and what was trashed together with it. */
 export async function deletePageForever(id: number): Promise<ActionResult> {
   try {
     const session = await requireActionSession()
@@ -522,10 +540,12 @@ export async function deletePageForever(id: number): Promise<ActionResult> {
     const pageId = asId(id)
     const page = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, trash: true, user, overrideAccess: false })
     if (!page.deletedAt) throw new Error('只能永久刪除垃圾桶裡的頁面')
-    const trashed = (await treeOf(session, idOf(page.notebook)!, true)).filter((p) => p.deletedAt).map(toPageNode)
+    // Pages under it trashed separately stay in the trash (their parent link
+    // is cleared by the foreign key, so they restore at the top level).
+    const all = await treeOf(session, idOf(page.notebook)!, true)
     await payload.delete({
       collection: 'note-pages',
-      where: { id: { in: subtreeIds(trashed, pageId) } },
+      where: { id: { in: trashBatch(all, pageId, page.deletedAt) } },
       trash: true,
       user,
       overrideAccess: false,
@@ -662,6 +682,7 @@ export async function createBoard(hostPageId: number): Promise<ActionResult<Page
     const session = await requireActionSession()
     const { payload, user } = session
     const host = await payload.findByID({ collection: 'note-pages', id: asId(hostPageId), depth: 0, user, overrideAccess: false })
+    if (host.kind === 'item') throw new Error('看板卡片裡不能再放看板')
     const notebook = idOf(host.notebook)!
     const siblings = childrenOf((await treeOf(session, notebook)).map(toPageNode), host.id)
     const doc = await payload.create({

@@ -120,7 +120,8 @@ export async function exportPage(format: 'markdown' | 'html', title: string, blo
     download(`${safeName(title)}.md`, `# ${heading}\n\n${body}`, 'text/markdown;charset=utf-8')
     return
   }
-  const body = await editor().blocksToHTMLLossy(standard)
+  // BlockNote writes an empty paragraph as U+FFFC (shown as a box in a browser).
+  const body = (await editor().blocksToHTMLLossy(standard)).replace(/￼/g, '')
   const html = `<!doctype html>
 <html lang="zh-Hant-TW">
 <head>
@@ -155,14 +156,15 @@ export async function parseImport(file: File): Promise<{ title: string; blocks: 
   let title = file.name.replace(/\.[^.]+$/, '')
   // A leading "# Title" becomes the page title, as Notion does.
   if (!isHtml) {
-    const match = raw.match(/^\s*#\s+(.+)\s*\n/)
+    const match = raw.match(/^\s*#\s+(.+?)\s*(?:\n|$)/)
     if (match) {
       title = match[1].trim()
       source = raw.slice(match[0].length)
     }
   } else {
-    const match = raw.match(/<title>([^<]*)<\/title>/i)
-    if (match?.[1].trim()) title = match[1].trim()
+    // The title is HTML text (our export writes `&amp;` for &).
+    const named = new DOMParser().parseFromString(raw, 'text/html').title.trim()
+    if (named) title = named
   }
   const blocks: unknown[] = isHtml ? await editor().tryParseHTMLToBlocks(source) : await editor().tryParseMarkdownToBlocks(source)
   // Our own HTML export repeats the title as the first heading.

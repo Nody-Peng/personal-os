@@ -13,8 +13,12 @@ let opened: string | null = null
 const here = () => window.location.pathname + window.location.search
 
 export function openPanel(router: Router, href: string) {
+  // Opening one panel from another we opened (a card link or a copy inside
+  // the peek) swaps it, so closing steps back past both, not to the first.
+  const swap = opened != null && opened === here()
   opened = href
-  router.push(href, { scroll: false })
+  if (swap) router.replace(href, { scroll: false })
+  else router.push(href, { scroll: false })
 }
 
 /** `refresh`: re-render the page underneath (its lists may have changed). */

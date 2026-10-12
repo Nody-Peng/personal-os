@@ -15,36 +15,35 @@ import { TRASH_DAYS } from './notes'
 const DAY = 86_400_000
 const UNUSED_DAYS = 7
 const PAGE_SIZE = 200
-const MEDIA_URL = /\/api\/media\/file\/([^"'\s?#)\\]+)/g
+const MEDIA_PATH = '/api/media/file/'
 // Never read for references: the files themselves and Payload's own records.
 const SKIP = new Set<string>(['media', 'users', 'payload-locked-documents', 'payload-preferences', 'payload-migrations'])
 
 export type DailyReport = { pagesPurged: number; snapshotsRemoved: number; mediaMarked: number; mediaKept: number; mediaDeleted: number }
 
-/** Every uploaded file name mentioned anywhere (trashed pages and snapshots included). */
-async function usedFiles(payload: Payload): Promise<Set<string>> {
-  const used = new Set<string>()
-  const scan = (value: unknown) => {
-    for (const [, name] of JSON.stringify(value).matchAll(MEDIA_URL)) {
-      used.add(name)
-      try {
-        used.add(decodeURIComponent(name))
-      } catch {
-        // Not URL-encoded after all.
-      }
-    }
-  }
+/**
+ * Everything stored (trashed pages and snapshots included), as JSON text to
+ * look file URLs up in. A file name can hold characters a URL leaves as they
+ * are, such as `(`, `)` and `'`, so names are searched for rather than parsed
+ * out of the text.
+ */
+async function storedText(payload: Payload): Promise<string> {
+  const parts: string[] = []
   for (const { slug } of payload.config.collections) {
     if (SKIP.has(slug)) continue
     for (let page = 1; ; page++) {
       const result = await payload.find({ collection: slug as CollectionSlug, depth: 0, limit: PAGE_SIZE, page, trash: true })
-      scan(result.docs)
+      parts.push(JSON.stringify(result.docs))
       if (!result.hasNextPage) break
     }
   }
-  for (const { slug } of payload.config.globals) scan(await payload.findGlobal({ slug: slug as never, depth: 0 }))
-  return used
+  for (const { slug } of payload.config.globals) parts.push(JSON.stringify(await payload.findGlobal({ slug: slug as never, depth: 0 })))
+  return parts.join('\n')
 }
+
+/** Payload links a file as `/api/media/file/<encodeURIComponent(name)>`; older content may hold the raw name. */
+const mentions = (text: string, filename: string) =>
+  text.includes(MEDIA_PATH + encodeURIComponent(filename)) || text.includes(JSON.stringify(MEDIA_PATH + filename).slice(1, -1))
 
 export async function runDailyJobs(payload: Payload, now = new Date()): Promise<DailyReport> {
   const report: DailyReport = { pagesPurged: 0, snapshotsRemoved: 0, mediaMarked: 0, mediaKept: 0, mediaDeleted: 0 }
@@ -56,11 +55,11 @@ export async function runDailyJobs(payload: Payload, now = new Date()): Promise<
   const orphans = await payload.delete({ collection: 'page-snapshots', where: { page: { exists: false } }, depth: 0 })
   report.snapshotsRemoved = orphans.docs.length
 
-  const used = await usedFiles(payload)
+  const text = await storedText(payload)
   const unusedCutoff = now.getTime() - UNUSED_DAYS * DAY
   const media = await payload.find({ collection: 'media', pagination: false, depth: 0, select: { filename: true, unusedSince: true } })
   for (const file of media.docs) {
-    const inUse = file.filename != null && used.has(file.filename)
+    const inUse = file.filename != null && mentions(text, file.filename)
     if (inUse) {
       if (file.unusedSince) {
         await payload.update({ collection: 'media', id: file.id, data: { unusedSince: null }, depth: 0 })

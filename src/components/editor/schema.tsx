@@ -224,7 +224,9 @@ export function slashItems(editor: NoteEditor, note: NoteEditorContext | null): 
     const at = MENU_ORDER.indexOf((item as { key?: string }).key ?? '')
     return at < 0 ? MENU_ORDER.length : at
   }
-  return items.map((item, i) => ({ item, i })).sort((a, b) => order(a.item) - order(b.item) || a.i - b.i).map(({ item }) => item)
+  // A board card can't hold sub-pages or boards.
+  const allowed = note?.canHoldPages === false ? items.filter((i) => !['page', 'board'].includes((i as { key?: string }).key ?? '')) : items
+  return allowed.map((item, i) => ({ item, i })).sort((a, b) => order(a.item) - order(b.item) || a.i - b.i).map(({ item }) => item)
 }
 
 /** The slash menu with nothing typed yet, top to bottom (Notion's order). */

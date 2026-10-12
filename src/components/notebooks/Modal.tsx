@@ -46,6 +46,7 @@ export function Modal({ title, onClose, children, size = 'md', hideTitle = false
       <button type="button" aria-label="關閉" tabIndex={-1} onClick={onClose} className="modal-scrim absolute inset-0 bg-scrim" />
       <div
         ref={panel}
+        data-own-escape
         role="dialog"
         aria-modal="true"
         aria-label={title}

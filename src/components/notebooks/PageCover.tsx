@@ -29,7 +29,7 @@ export function PageCover({ cover, position, onChange, readOnly = false }: Props
 
   return (
     <div
-      className={`group relative h-[30vh] max-h-72 min-h-36 w-full overflow-hidden bg-sunken ${moving ? 'cursor-ns-resize' : ''}`}
+      className={`group relative h-[30vh] max-h-72 min-h-36 w-full overflow-hidden bg-sunken ${moving ? 'cursor-ns-resize touch-none' : ''}`}
       onPointerDown={(e) => {
         if (!moving) return
         e.currentTarget.setPointerCapture(e.pointerId)
@@ -42,6 +42,9 @@ export function PageCover({ cover, position, onChange, readOnly = false }: Props
         setPos(Math.max(0, Math.min(100, Math.round(drag.current.start - delta))))
       }}
       onPointerUp={() => {
+        drag.current = null
+      }}
+      onPointerCancel={() => {
         drag.current = null
       }}
     >

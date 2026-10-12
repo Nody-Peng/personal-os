@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActionResult } from '@/app/(frontend)/actions'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -37,5 +37,32 @@ export function useSaveQueue() {
       })
   }, [])
 
-  return { enqueue, status, error, savedAt }
+  /** True while a save is still on its way. */
+  const busy = useCallback(() => pending.current > 0, [])
+  /** Resolves once every save queued so far has finished. */
+  const settled = useCallback(() => chain.current.then(() => undefined), [])
+
+  return { enqueue, busy, settled, status, error, savedAt }
+}
+
+/**
+ * Closing or reloading the tab while something is unsaved: start the save
+ * and have the browser ask first (a request started while the page unloads
+ * is cancelled, so the last second of typing would otherwise be lost).
+ */
+export function useLeaveGuard(unsaved: () => boolean, flush: () => void) {
+  const latest = useRef({ unsaved, flush })
+  useEffect(() => {
+    latest.current = { unsaved, flush }
+  })
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (!latest.current.unsaved()) return
+      latest.current.flush()
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onLeave)
+    return () => window.removeEventListener('beforeunload', onLeave)
+  }, [])
 }

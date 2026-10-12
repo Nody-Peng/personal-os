@@ -28,7 +28,7 @@ export const Callout = createReactBlockSpec(
               aria-label="更換圖示"
               disabled={!editor.isEditable}
               onClick={() => setPicking(true)}
-              className="grid size-7 place-items-center rounded-md text-xl leading-none hover:bg-black/5"
+              className="grid size-7 place-items-center rounded-md text-xl leading-none hover:bg-sunken"
             >
               <NoteIcon icon={block.props.emoji || '💡'} />
             </button>
