@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { JournalCover } from '@/components/books/BookCover'
+import { ExportJournalButton } from '@/components/journalPrint/ExportJournalButton'
 import { addDays, daysInMonth, logicalDay, weekStart } from '@/lib/day'
 import { isRecordedLog } from '@/lib/dailyLog'
 import { getImportantTasks, getJournal, getLogsBetween } from '@/lib/queries'
@@ -54,7 +55,7 @@ export default async function YearPage({ params }: Props) {
             size="sm"
           />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="font-mono text-xs text-muted">
             <Link href="/journal" className="hover:text-ink-strong hover:underline">
               書架
@@ -64,6 +65,7 @@ export default async function YearPage({ params }: Props) {
           <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink-strong md:text-4xl">{journal?.title ?? `${year} 日記本`}</h1>
           {journal?.subtitle && <p className="mt-1 text-muted">{journal.subtitle}</p>}
         </div>
+        <ExportJournalButton year={year} title={journal?.title ?? `${year} 日記本`} subtitle={journal?.subtitle ?? ''} today={today} />
       </header>
 
       <ul className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4">

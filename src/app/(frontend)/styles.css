@@ -866,6 +866,28 @@ button.note-pagelink:hover {
   }
 }
 
+/* Journal book print page (components/journalPrint): Paged.js pages on a
+   desk, shown smaller on phones; printing shows them at full size. */
+@media screen {
+  .paged-preview .pagedjs_pages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    padding: 24px 0 64px;
+  }
+  .paged-preview .pagedjs_page {
+    box-shadow:
+      0 1px 2px rgba(17, 17, 17, 0.08),
+      0 14px 32px -14px rgba(17, 17, 17, 0.35);
+  }
+}
+@media print {
+  .paged-preview {
+    zoom: 1 !important;
+  }
+}
+
 /* ---- E-books (/books, components/reader) ----
    The reader has its own palette (--r-* on .reader-root, from reader/settings.ts),
    so a sepia page gets sepia panels whatever the app theme is. */

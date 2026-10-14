@@ -220,7 +220,12 @@ export function VoicePicker({ lang, status, source, browserVoices, browserVoice,
       {tab !== 'browser' && status?.[tab] && (
         <p className="flex items-start gap-2 border-t border-[var(--r-line)] px-4 py-2.5 text-[11.5px] leading-relaxed text-[var(--r-muted)]">
           <CloudCheck size={15} className="mt-px shrink-0" />
-          雲端語音依用量計費：每段第一次念到才產生，念過的會存在這台裝置，重聽不再計費。手機鎖屏也能繼續聽。
+          雲端語音依用量計費：每段第一次念到才產生，念過的會存在這台裝置，重聽不再計費。鎖屏或切到其他 App 也會一章接一章念下去。
+        </p>
+      )}
+      {tab === 'browser' && (
+        <p className="border-t border-[var(--r-line)] px-4 py-2.5 text-[11.5px] leading-relaxed text-[var(--r-muted)]">
+          鎖屏或切到其他 App 時，瀏覽器語音多半會停；要在背景聽，請選雲端語音。
         </p>
       )}
     </div>

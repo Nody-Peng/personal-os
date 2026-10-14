@@ -295,6 +295,13 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
       onState: (s) => !disposed && setTtsState(s),
       onError: (message) => !disposed && setToast({ text: message, tone: 'error' }),
       continueAfterChapter: () => continueAfterChapter(),
+      // Reading on in the background: no page turns report the spot, so it's saved from here.
+      onPosition: (cfi) => {
+        if (disposed) return
+        const spineLength = (book.spine as unknown as { length?: number }).length ?? 1
+        const p = book.locations.length() ? book.locations.percentageFromCfi(cfi) : NaN
+        trackSave(saveReadingPosition(info.id, cfi, Number.isFinite(p) ? p : new EpubCFI(cfi).spinePos / Math.max(1, spineLength)))
+      },
     })
     ttsRef.current = tts
 
@@ -306,7 +313,7 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
       setRendition(null)
       setTtsState('idle')
     }
-  }, [book, settings.flow, settings.horizontal, info.language])
+  }, [book, settings.flow, settings.horizontal, info.language, info.id])
 
   // ---- appearance: restyle every chapter on screen, then stay on the same spot ----
   useEffect(() => {
@@ -652,8 +659,8 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
 
   // ---- read aloud ----
   useEffect(() => {
-    ttsRef.current?.configure({ choice, rate: ttsPrefs.rate, lang: effectiveLang, title: info.title, artist: info.author ?? '' })
-  }, [choice, ttsPrefs.rate, effectiveLang, rendition, info.title, info.author])
+    ttsRef.current?.configure({ choice, rate: ttsPrefs.rate, lang: effectiveLang, title: info.title, artist: info.author ?? '', cover: info.coverUrl })
+  }, [choice, ttsPrefs.rate, effectiveLang, rendition, info.title, info.author, info.coverUrl])
 
   const play = (fromCfi?: string) => {
     const tts = ttsRef.current

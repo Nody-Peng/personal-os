@@ -11,6 +11,12 @@
 //             element (keeps going with the screen locked; lock-screen controls
 //             work), and the highlight follows the playback position, spread
 //             over the piece's sentences by their length.
+//
+// In the background (another app, screen off) the book can't be laid out:
+// epub.js waits for animation frames, which a hidden page doesn't get. So the
+// next chapter's text is read straight from the book file, page turns wait,
+// and coming back shows the sentence being read. The spot is saved now and
+// then meanwhile (`onPosition`), in case the app is never opened again.
 
 import type { Book, Contents, Rendition } from 'epubjs'
 import { EpubCFI } from 'epubjs'
@@ -33,20 +39,70 @@ type Options = {
   onError: (message: string) => void
   /** Asked when a chapter has been read to its end; false pauses there (sleep timer). */
   continueAfterChapter?: () => boolean
+  /** Where reading has got to while the page is hidden (a point CFI), at most every half minute. */
+  onPosition?: (cfi: string) => void
 }
 
 type Chunk = { start: number; end: number }
+/** A chapter loaded from the book file rather than shown on screen. */
+type OffscreenSection = {
+  index: number
+  href: string
+  document?: Document
+  load: (request: unknown) => Promise<unknown>
+  unload: () => void
+  cfiFromRange: (range: Range) => string
+}
 type HighlightWindow = Window & { CSS?: { highlights?: Map<string, unknown> }; Highlight?: new (...ranges: Range[]) => unknown }
 
 /** Our own page turns cause `relocated` too; those within this window aren't the reader's. */
 const OWN_MOVE_MS = 900
 /** A sentence break is a short pause: count it as a few characters of time. */
 const PAUSE_WEIGHT = 6
+/** How often the spot is saved while reading in the background. */
+const POSITION_EVERY = 30_000
+
+const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
+
+/** True once `promise` settles; false as soon as the page is hidden (epub.js stalls until it's back). */
+const unlessHidden = (promise: Promise<unknown>) =>
+  new Promise<boolean>((resolve) => {
+    if (pageHidden()) return resolve(false)
+    const finish = (shown: boolean) => {
+      document.removeEventListener('visibilitychange', onChange)
+      resolve(shown)
+    }
+    const onChange = () => pageHidden() && finish(false)
+    document.addEventListener('visibilitychange', onChange)
+    promise.then(
+      () => finish(true),
+      () => finish(true),
+    )
+  })
+
 /** 0.1 s of silence: played inside the tap so iOS lets the <audio> element play later. */
 const SILENT_MP3 =
   'data:audio/mpeg;base64,//NAxAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80LEWwAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80DEpAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsSjAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NCxKMAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'
 
 const cfiCompare = new EpubCFI()
+
+/** Fixed pieces of a few sentences, counted from the top of the chapter. */
+function chunksOf(segments: Segment[]): Chunk[] {
+  const chunks: Chunk[] = []
+  let start = 0
+  let chars = 0
+  for (let i = 0; i < segments.length; i++) {
+    const len = segments[i].text.length
+    if (i > start && chars + len > CHUNK_CHARS) {
+      chunks.push({ start, end: i - 1 })
+      start = i
+      chars = 0
+    }
+    chars += len
+  }
+  if (segments.length) chunks.push({ start, end: segments.length - 1 })
+  return chunks
+}
 
 export function speechSupported() {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
@@ -83,7 +139,7 @@ export class ReadAloud {
   private opts: Options
   private choice: VoiceChoice = { kind: 'browser', voice: null }
   private rate = 1
-  private meta = { title: '', artist: '' }
+  private meta: { title: string; artist: string; cover: string | null } = { title: '', artist: '', cover: null }
   private state: ReadAloudState = 'idle'
   private sectionIndex = -1
   private doc: Document | null = null
@@ -97,6 +153,11 @@ export class ReadAloud {
   private wakeLock: { release: () => Promise<void> } | null = null
   /** Paused because a chapter ended (sleep timer): resuming starts the next one. */
   private chapterDone = false
+  /** Set while the sentences come from a chapter read in the background (not on screen). */
+  private offscreen: OffscreenSection | null = null
+  /** Turning to the sentence being read after the page was hidden. */
+  private catching = false
+  private positionAt = 0
   // Cloud playback
   private audio: HTMLAudioElement | null = null
   private audioUrl: string | null = null
@@ -107,6 +168,7 @@ export class ReadAloud {
 
   constructor(opts: Options) {
     this.opts = opts
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
   }
 
   get current() {
@@ -118,13 +180,13 @@ export class ReadAloud {
   }
 
   /** Voice, speed and language. A new voice restarts the sentence; cloud speed changes in place. */
-  configure(next: { choice: VoiceChoice; rate: number; lang: string; title: string; artist: string }) {
+  configure(next: { choice: VoiceChoice; rate: number; lang: string; title: string; artist: string; cover?: string | null }) {
     const voiceChanged = !sameChoice(this.choice, next.choice)
     const rateChanged = next.rate !== this.rate
     this.choice = next.choice
     this.rate = next.rate
     this.lang = next.lang
-    this.meta = { title: next.title, artist: next.artist }
+    this.meta = { title: next.title, artist: next.artist, cover: next.cover ?? null }
     if (this.audio) this.audio.playbackRate = next.rate
     if (voiceChanged) {
       this.halt()
@@ -202,6 +264,7 @@ export class ReadAloud {
     this.segments = []
     this.chunks = []
     this.doc = null
+    this.leaveOffscreen()
     this.sectionIndex = -1
     this.loaded = null
     this.setState('idle')
@@ -230,13 +293,14 @@ export class ReadAloud {
    * gone from view), carry on from the new page instead.
    */
   relocated(location: Location) {
-    if (this.state !== 'playing' || Date.now() - this.movedAt < OWN_MOVE_MS) return
+    if (this.state !== 'playing' || this.offscreen || this.catching || Date.now() - this.movedAt < OWN_MOVE_MS) return
     const seg = this.segments[this.index]
     if (seg && this.visible(seg, location)) return
     void this.start()
   }
 
   destroy() {
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility)
     this.stop()
     if (this.audioUrl) URL.revokeObjectURL(this.audioUrl)
     this.audioUrl = null
@@ -247,6 +311,13 @@ export class ReadAloud {
   }
 
   // ---- internals: shared ----
+
+  /** Back on screen: turn to the sentence being read (page turns waited meanwhile). */
+  private onVisibility = () => {
+    const seg = this.segments[this.index]
+    if (pageHidden() || this.state === 'idle' || !seg) return
+    void this.follow(seg)
+  }
 
   private setState(state: ReadAloudState) {
     if (this.state === state) return
@@ -277,27 +348,15 @@ export class ReadAloud {
     return (Array.isArray(all) ? all : [all]).find((c) => c?.sectionIndex === sectionIndex) ?? null
   }
 
-  /** Fixed pieces of a few sentences, counted from the top of the chapter. */
   private planChunks() {
-    this.chunks = []
-    let start = 0
-    let chars = 0
-    for (let i = 0; i < this.segments.length; i++) {
-      const len = this.segments[i].text.length
-      if (i > start && chars + len > CHUNK_CHARS) {
-        this.chunks.push({ start, end: i - 1 })
-        start = i
-        chars = 0
-      }
-      chars += len
-    }
-    if (this.segments.length) this.chunks.push({ start, end: this.segments.length - 1 })
+    this.chunks = chunksOf(this.segments)
   }
 
   /** Splits the chapter on screen into sentences; false when it has none. */
   private load(sectionIndex: number): boolean {
     const contents = this.contentsFor(sectionIndex)
     if (!contents?.document) return false
+    this.leaveOffscreen()
     this.sectionIndex = sectionIndex
     this.doc = contents.document
     this.segments = segmentDocument(contents.document, this.lang)
@@ -313,9 +372,11 @@ export class ReadAloud {
    */
   private ensureDocument(): boolean {
     const contents = this.contentsFor(this.sectionIndex)
-    if (!contents?.document) return false
+    // A chapter read in the background goes on from the book file until it's shown.
+    if (!contents?.document) return this.offscreen != null && this.segments.length > 0
     if (contents.document !== this.doc) {
       const index = this.index
+      this.leaveOffscreen()
       this.doc = contents.document
       this.segments = segmentDocument(contents.document, this.lang)
       this.planChunks()
@@ -324,8 +385,38 @@ export class ReadAloud {
     return this.segments.length > 0
   }
 
+  /**
+   * A chapter read in the background, from the book file. Its sentences split
+   * the same way as when it's shown, so the numbering carries over.
+   */
+  private async loadOffscreen(section: OffscreenSection, gen: number): Promise<boolean> {
+    try {
+      await section.load(this.opts.book.load.bind(this.opts.book))
+    } catch {
+      return false
+    }
+    if (gen !== this.generation || !section.document) return false
+    this.clearHighlight()
+    this.leaveOffscreen()
+    this.offscreen = section
+    this.sectionIndex = section.index
+    this.doc = section.document
+    this.segments = segmentDocument(section.document, this.lang)
+    this.planChunks()
+    this.index = 0
+    this.reportPosition(true)
+    return this.segments.length > 0
+  }
+
+  private leaveOffscreen() {
+    const section = this.offscreen
+    this.offscreen = null
+    section?.unload()
+  }
+
   private cfiOf(range: Range): string | null {
     try {
+      if (this.offscreen) return this.offscreen.cfiFromRange(range)
       return this.contentsFor(this.sectionIndex)?.cfiFromRange(range) ?? null
     } catch {
       return null
@@ -349,8 +440,17 @@ export class ReadAloud {
     return cfiCompare.compare(cfi, location.start.cfi) >= 0 && cfiCompare.compare(cfi, location.end.cfi) <= 0
   }
 
-  /** Turns the page when the sentence starts off screen. */
+  /** Where the sentence starts, as a point CFI. */
+  private startCfi(seg: Segment): string | null {
+    const start = seg.range.cloneRange()
+    start.collapse(true)
+    return this.cfiOf(start)
+  }
+
+  /** Turns the page when the sentence starts off screen (not while the page is hidden). */
   private async follow(seg: Segment) {
+    if (pageHidden()) return
+    if (this.offscreen) return this.catchUp()
     const location = this.location()
     if (location && this.visible(seg, location)) return
     const cfi = this.cfiOf(seg.range)
@@ -358,6 +458,40 @@ export class ReadAloud {
     this.movedAt = Date.now()
     await this.opts.rendition.display(cfi)
     this.movedAt = Date.now()
+  }
+
+  /** The chapter was read in the background: show it, then carry on in the shown copy. */
+  private async catchUp() {
+    const seg = this.segments[this.index]
+    const cfi = seg && this.startCfi(seg)
+    if (this.catching || !cfi) return
+    this.catching = true
+    try {
+      this.movedAt = Date.now()
+      await this.opts.rendition.display(cfi)
+    } catch {
+      // Left as it is: the next sentence tries again.
+    } finally {
+      this.catching = false
+      this.movedAt = Date.now()
+    }
+    // ensureDocument moves over to the shown copy once the chapter is on screen.
+    if (this.state === 'idle' || !this.ensureDocument() || this.offscreen) return
+    const now = this.segments[this.index]
+    if (!now) return
+    this.highlight(now)
+    void this.follow(now)
+  }
+
+  /** Saves the spot now and then while the page is hidden (no page turns report it then). */
+  private reportPosition(force = false) {
+    if (!this.opts.onPosition || !(pageHidden() || this.offscreen)) return
+    if (!force && Date.now() - this.positionAt < POSITION_EVERY) return
+    const seg = this.segments[this.index]
+    const cfi = seg && this.startCfi(seg)
+    if (!cfi) return
+    this.positionAt = Date.now()
+    this.opts.onPosition(cfi)
   }
 
   private highlight(seg: Segment) {
@@ -381,9 +515,9 @@ export class ReadAloud {
     }
   }
 
-  /** Opens the next chapter that has text and reads it from the top. */
+  /** Opens the next chapter that has text and reads it from the top (from the book file while hidden). */
   private async nextSection(gen: number) {
-    const spine = this.opts.book.spine as unknown as { get: (i: number) => { index: number; href: string } | null }
+    const spine = this.opts.book.spine as unknown as { get: (i: number) => OffscreenSection | null }
     for (let i = this.sectionIndex + 1; ; i++) {
       const section = spine.get(i)
       if (!section) {
@@ -391,14 +525,18 @@ export class ReadAloud {
         return
       }
       this.setState('loading')
-      this.movedAt = Date.now()
-      await this.opts.rendition.display(section.href)
-      this.movedAt = Date.now()
+      let shown = false
+      if (!pageHidden()) {
+        this.movedAt = Date.now()
+        shown = await unlessHidden(this.opts.rendition.display(section.href))
+        this.movedAt = Date.now()
+      }
       if (gen !== this.generation) return
-      if (this.load(section.index)) {
+      if (shown ? this.load(section.index) : await this.loadOffscreen(section, gen)) {
         this.speak(gen)
         return
       }
+      if (gen !== this.generation) return
       this.sectionIndex = section.index
     }
   }
@@ -410,6 +548,7 @@ export class ReadAloud {
     const seg = this.segments[this.index]
     this.highlight(seg)
     void this.follow(seg)
+    this.reportPosition()
 
     const voice = this.choice.kind === 'browser' ? this.choice.voice : null
     const u = new SpeechSynthesisUtterance(seg.text)
@@ -470,10 +609,10 @@ export class ReadAloud {
     return chunk.end
   }
 
-  private request(chunk: Chunk) {
+  private request(chunk: Chunk, segments = this.segments) {
     const choice = this.choice as Extract<VoiceChoice, { kind: 'cloud' }>
     const joiner = /^(zh|ja)/i.test(this.lang) ? '' : ' '
-    const text = this.segments
+    const text = segments
       .slice(chunk.start, chunk.end + 1)
       .map((s) => s.text)
       .join(joiner)
@@ -497,6 +636,7 @@ export class ReadAloud {
         this.index = i
         this.highlight(this.segments[i])
         void this.follow(this.segments[i])
+        this.reportPosition()
       }
     })
     audio.addEventListener('ended', () => {
@@ -563,7 +703,10 @@ export class ReadAloud {
     audio.playbackRate = this.rate
     this.audioGen = gen
     const ms = navigator.mediaSession
-    if (ms && typeof MediaMetadata !== 'undefined') ms.metadata = new MediaMetadata({ title: this.meta.title, artist: this.meta.artist })
+    if (ms && typeof MediaMetadata !== 'undefined') {
+      const { title, artist, cover } = this.meta
+      ms.metadata = new MediaMetadata({ title, artist, artwork: cover ? [{ src: cover }] : [] })
+    }
     try {
       await audio.play()
     } catch {
@@ -575,9 +718,33 @@ export class ReadAloud {
     if (gen !== this.generation) return void audio.pause()
     this.setState('playing')
 
-    // Fetch the next piece while this one plays.
+    // Fetch the next piece while this one plays. In the background, the next
+    // chapter's first one too: a long silence lets the phone stop the page.
     const next = this.chunks.find((c) => c.start === chunk.end + 1)
     if (next) void speechAudio(this.request(next)).catch(() => undefined)
+    else if (pageHidden()) void this.prefetchNextChapter()
+  }
+
+  /** The first piece of the next chapter with text, read from the book file. */
+  private async prefetchNextChapter() {
+    const spine = this.opts.book.spine as unknown as { get: (i: number) => OffscreenSection | null }
+    // A few picture pages at most are skipped looking for text.
+    for (let i = this.sectionIndex + 1; i <= this.sectionIndex + 3; i++) {
+      const section = spine.get(i)
+      if (!section) return
+      try {
+        // Left loaded: reading goes on in it next.
+        await section.load(this.opts.book.load.bind(this.opts.book))
+        if (!section.document) return
+        const segments = segmentDocument(section.document, this.lang)
+        const first = chunksOf(segments)[0]
+        if (!first) continue
+        await speechAudio(this.request(first, segments))
+      } catch {
+        // Fetched again when the chapter starts.
+      }
+      return
+    }
   }
 
   private async keepAwake() {

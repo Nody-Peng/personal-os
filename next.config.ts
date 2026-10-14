@@ -19,6 +19,10 @@ const securityHeaders = [
     : []),
 ]
 
+// Paged.js (the journal book's paginator) from its prebuilt bundle: its source
+// imports `es5-ext/string/#/contains`, a path bundlers misread.
+const PAGEDJS = './node_modules/pagedjs/dist/paged.esm.js'
+
 const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
@@ -36,11 +40,13 @@ const nextConfig: NextConfig = {
       '.js': ['.ts', '.tsx', '.js', '.jsx'],
       '.mjs': ['.mts', '.mjs'],
     }
+    webpackConfig.resolve.alias = { ...webpackConfig.resolve.alias, pagedjs$: path.resolve(dirname, PAGEDJS) }
 
     return webpackConfig
   },
   turbopack: {
     root: path.resolve(dirname),
+    resolveAlias: { pagedjs: PAGEDJS },
   },
 }
 
