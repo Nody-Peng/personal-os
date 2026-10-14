@@ -225,7 +225,7 @@ export function VoicePicker({ lang, status, source, browserVoices, browserVoice,
       )}
       {tab === 'browser' && (
         <p className="border-t border-[var(--r-line)] px-4 py-2.5 text-[11.5px] leading-relaxed text-[var(--r-muted)]">
-          鎖屏或切到其他 App 時，瀏覽器語音多半會停；要在背景聽，請選雲端語音。
+          手機鎖屏或切到其他 App 時，系統會停掉瀏覽器語音（回來後從那句接著念）；要在背景一直聽，請選雲端語音。
         </p>
       )}
     </div>

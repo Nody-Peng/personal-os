@@ -17,6 +17,10 @@
 // next chapter's text is read straight from the book file, page turns wait,
 // and coming back shows the sentence being read. The spot is saved now and
 // then meanwhile (`onPosition`), in case the app is never opened again.
+// Only cloud voices get there on phones: Chrome for Android stops the Web
+// Speech API as soon as the app has no visible window (and refuses new
+// sentences until it has one again), so a browser voice picks up the
+// sentence it was cut off in when the page is shown again.
 
 import type { Book, Contents, Rendition } from 'epubjs'
 import { EpubCFI } from 'epubjs'
@@ -41,6 +45,8 @@ type Options = {
   continueAfterChapter?: () => boolean
   /** Where reading has got to while the page is hidden (a point CFI), at most every half minute. */
   onPosition?: (cfi: string) => void
+  /** Something to tell the reader that isn't an error. */
+  onNotice?: (message: string) => void
 }
 
 type Chunk = { start: number; end: number }
@@ -158,6 +164,8 @@ export class ReadAloud {
   /** Turning to the sentence being read after the page was hidden. */
   private catching = false
   private positionAt = 0
+  /** The phone has stopped a browser voice in the background before (told once). */
+  private toldBackground = false
   // Cloud playback
   private audio: HTMLAudioElement | null = null
   private audioUrl: string | null = null
@@ -316,6 +324,15 @@ export class ReadAloud {
   private onVisibility = () => {
     const seg = this.segments[this.index]
     if (pageHidden() || this.state === 'idle' || !seg) return
+    if (!this.cloud && this.state === 'playing' && speechSupported() && !speechSynthesis.speaking && !speechSynthesis.pending) {
+      // The system silenced the browser voice while the app was away: carry on from that sentence.
+      if (!this.toldBackground) {
+        this.toldBackground = true
+        this.opts.onNotice?.('手機在背景時會停掉瀏覽器語音，已從剛才那句接著念。要在背景聽，請在語音選單改用雲端語音。')
+      }
+      this.speak(++this.generation)
+      return
+    }
     void this.follow(seg)
   }
 
@@ -565,7 +582,8 @@ export class ReadAloud {
       }
     }
     u.onerror = (event) => {
-      if (gen !== this.generation || event.error === 'interrupted' || event.error === 'canceled') return
+      // In the background a phone stops speech and refuses the next sentence: picked up again when shown.
+      if (gen !== this.generation || event.error === 'interrupted' || event.error === 'canceled' || pageHidden()) return
       this.opts.onError(event.error === 'not-allowed' ? '瀏覽器擋下了朗讀，請再按一次播放' : '朗讀中斷了')
       this.pause()
     }

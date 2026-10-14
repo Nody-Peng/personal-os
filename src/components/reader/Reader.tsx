@@ -294,6 +294,7 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
       book,
       onState: (s) => !disposed && setTtsState(s),
       onError: (message) => !disposed && setToast({ text: message, tone: 'error' }),
+      onNotice: (message) => !disposed && setToast({ text: message, tone: 'info' }),
       continueAfterChapter: () => continueAfterChapter(),
       // Reading on in the background: no page turns report the spot, so it's saved from here.
       onPosition: (cfi) => {
