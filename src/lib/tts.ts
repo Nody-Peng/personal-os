@@ -10,8 +10,15 @@ export type CloudVoice = { id: string; label: string; locale: string | null; not
 /** GET /api/tts: voices per service, null when the service has no key. */
 export type TtsStatus = { azure: CloudVoice[] | null; gemini: CloudVoice[] | null }
 
-/** One request reads about this much text (a few sentences, ~1 minute of audio). */
-export const CHUNK_CHARS = 300
+/**
+ * Characters per request. Azure answers in about a second, so a piece is a
+ * few sentences (~1 minute of audio). Gemini takes ~5 s plus ~0.08 s a
+ * character, so its pieces are a sentence or two (~8–10 s to the first sound,
+ * then it keeps ahead while the earlier piece plays).
+ */
+export const CHUNK_CHARS: Record<CloudProvider, number> = { azure: 300, gemini: 70 }
+/** Pieces fetched ahead of the one playing. */
+export const PREFETCH: Record<CloudProvider, number> = { azure: 1, gemini: 2 }
 export const MAX_TTS_CHARS = 1200
 
 /** Gemini's prebuilt voices; each speaks every language. Notes are Google's descriptions. */

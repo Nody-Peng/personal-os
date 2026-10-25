@@ -840,6 +840,13 @@ export default function Reader({ book: info, bookmarks: initialBookmarks, highli
         <ListenBar
           state={ttsState}
           voiceLabel={voiceLabel}
+          hint={
+            ttsState === 'loading' && source !== 'browser'
+              ? source === 'gemini'
+                ? 'Gemini 正在產生語音，第一段約需 10 秒…'
+                : '正在產生語音…'
+              : null
+          }
           voicePicker={(close) => (
             <VoicePicker
               lang={effectiveLang}

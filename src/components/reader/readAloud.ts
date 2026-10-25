@@ -25,7 +25,7 @@
 import type { Book, Contents, Rendition } from 'epubjs'
 import { EpubCFI } from 'epubjs'
 import type { Location } from 'epubjs/types/rendition'
-import { CHUNK_CHARS, type CloudProvider, type GeminiStyle, type TtsSource } from '@/lib/tts'
+import { CHUNK_CHARS, PREFETCH, type CloudProvider, type GeminiStyle, type TtsSource } from '@/lib/tts'
 import { speechAudio } from './cloudSpeech'
 import { segmentDocument, type Segment } from './sentences'
 import { TTS_HIGHLIGHT } from './settings'
@@ -93,13 +93,13 @@ const SILENT_MP3 =
 const cfiCompare = new EpubCFI()
 
 /** Fixed pieces of a few sentences, counted from the top of the chapter. */
-function chunksOf(segments: Segment[]): Chunk[] {
+function chunksOf(segments: Segment[], limit: number): Chunk[] {
   const chunks: Chunk[] = []
   let start = 0
   let chars = 0
   for (let i = 0; i < segments.length; i++) {
     const len = segments[i].text.length
-    if (i > start && chars + len > CHUNK_CHARS) {
+    if (i > start && chars + len > limit) {
       chunks.push({ start, end: i - 1 })
       start = i
       chars = 0
@@ -197,6 +197,8 @@ export class ReadAloud {
     this.meta = { title: next.title, artist: next.artist, cover: next.cover ?? null }
     if (this.audio) this.audio.playbackRate = next.rate
     if (voiceChanged) {
+      // Piece sizes depend on the service.
+      if (this.segments.length) this.planChunks()
       this.halt()
       if (this.state === 'playing' || this.state === 'loading') this.speak(++this.generation)
     } else if (rateChanged && !this.cloud && this.state === 'playing') {
@@ -365,8 +367,13 @@ export class ReadAloud {
     return (Array.isArray(all) ? all : [all]).find((c) => c?.sectionIndex === sectionIndex) ?? null
   }
 
+  /** Characters per piece: a cloud service's size; browser voices don't use pieces. */
+  private get chunkLimit() {
+    return this.choice.kind === 'cloud' ? CHUNK_CHARS[this.choice.provider] : Infinity
+  }
+
   private planChunks() {
-    this.chunks = chunksOf(this.segments)
+    this.chunks = chunksOf(this.segments, this.chunkLimit)
   }
 
   /** Splits the chapter on screen into sentences; false when it has none. */
@@ -686,6 +693,8 @@ export class ReadAloud {
     const chunk = this.chunkOf(this.index)
     const key = this.keyOf(chunk)
     const audio = this.audioElement()
+    // Ask for the next pieces now, alongside this one, so playback doesn't wait between them.
+    this.prefetch(chunk)
 
     if (this.loaded?.key !== key) {
       this.setState('loading')
@@ -735,12 +744,25 @@ export class ReadAloud {
     }
     if (gen !== this.generation) return void audio.pause()
     this.setState('playing')
+  }
 
-    // Fetch the next piece while this one plays. In the background, the next
-    // chapter's first one too: a long silence lets the phone stop the page.
-    const next = this.chunks.find((c) => c.start === chunk.end + 1)
-    if (next) void speechAudio(this.request(next)).catch(() => undefined)
-    else if (pageHidden()) void this.prefetchNextChapter()
+  /**
+   * Asks for the next pieces while this one plays. In the background, past the
+   * chapter's end, the next chapter's first one too: a long silence lets the
+   * phone stop the page.
+   */
+  private prefetch(from: Chunk) {
+    if (this.choice.kind !== 'cloud') return
+    let at = from
+    for (let n = 0; n < PREFETCH[this.choice.provider]; n++) {
+      const next = this.chunks.find((c) => c.start === at.end + 1)
+      if (!next) {
+        if (pageHidden()) void this.prefetchNextChapter()
+        return
+      }
+      void speechAudio(this.request(next)).catch(() => undefined)
+      at = next
+    }
   }
 
   /** The first piece of the next chapter with text, read from the book file. */
@@ -755,7 +777,7 @@ export class ReadAloud {
         await section.load(this.opts.book.load.bind(this.opts.book))
         if (!section.document) return
         const segments = segmentDocument(section.document, this.lang)
-        const first = chunksOf(segments)[0]
+        const first = chunksOf(segments, this.chunkLimit)[0]
         if (!first) continue
         await speechAudio(this.request(first, segments))
       } catch {

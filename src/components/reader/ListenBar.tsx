@@ -63,6 +63,8 @@ type Props = {
   voiceLabel: string
   /** The voice menu (VoicePicker); `close` hides it after a choice. */
   voicePicker: (close: () => void) => ReactNode
+  /** Shown above the bar while a cloud voice is still being made. */
+  hint?: string | null
   rate: number
   onPlay: () => void
   onPause: () => void
@@ -73,7 +75,7 @@ type Props = {
   onClose: () => void
 }
 
-export function ListenBar({ state, voiceLabel, voicePicker, rate, onPlay, onPause, onSkip, onRate, sleep, onSleep, onClose }: Props) {
+export function ListenBar({ state, voiceLabel, voicePicker, hint, rate, onPlay, onPause, onSkip, onRate, sleep, onSleep, onClose }: Props) {
   const [picking, setPicking] = useState<'voice' | 'sleep' | null>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
   const playing = state === 'playing' || state === 'loading'
@@ -131,6 +133,11 @@ export function ListenBar({ state, voiceLabel, voicePicker, rate, onPlay, onPaus
         </div>
       )}
       {picking === 'voice' && voicePicker(() => setPicking(null))}
+      {hint && !picking && (
+        <p role="status" className="reader-pop mx-auto mb-2 w-fit rounded-full border border-[var(--r-line)] bg-[var(--r-surface)] px-3 py-1 text-[12px] text-[var(--r-muted)] shadow-sm">
+          {hint}
+        </p>
+      )}
 
       <div
         role="toolbar"
