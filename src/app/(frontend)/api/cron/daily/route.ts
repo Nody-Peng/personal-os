@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import config from '@payload-config'
 import { getPayload } from 'payload'
 import { runDailyJobs } from '@/lib/dailyJobs'
@@ -7,9 +8,15 @@ import { runDailyJobs } from '@/lib/dailyJobs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+/** Compares hashes in constant time, so response timing reveals nothing about the secret. */
+function sameSecret(given: string | null, secret: string): boolean {
+  const digest = (text: string) => createHash('sha256').update(text).digest()
+  return given != null && timingSafeEqual(digest(given), digest(`Bearer ${secret}`))
+}
+
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!secret || !sameSecret(request.headers.get('authorization'), secret)) {
     return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
   const payload = await getPayload({ config })

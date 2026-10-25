@@ -23,6 +23,7 @@ export async function POST(request: Request) {
   } catch {
     return fail('格式錯誤', 400)
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail('格式錯誤', 400)
   const provider = body.provider
   const voice = String(body.voice ?? '')
   const text = String(body.text ?? '').trim()
