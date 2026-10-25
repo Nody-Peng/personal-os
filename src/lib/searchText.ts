@@ -3,6 +3,7 @@
 // the same functions backfilled the existing rows (migration ux_batch).
 
 import { blocksToText } from './blocks'
+import { channelText } from './channel'
 
 type Doc = Record<string, unknown>
 
@@ -21,7 +22,8 @@ export const dayLogText = (log: Doc) => lines(blocksToText(log.note), itemsText(
 /** A task's body (its title is searched as is). */
 export const taskText = (task: Doc) => blocksToText(task.body)
 
-/** A week note: the Sunday review and why the theme was picked. */
-export const weekText = (week: Doc) => lines(blocksToText(week.review), week.themeReason)
+/** A week note: the Sunday review, why the theme was picked, and the channel checklist and note. */
+export const weekText = (week: Doc) =>
+  lines(blocksToText(week.review), week.themeReason, channelText(week.channel), blocksToText(week.channelNote))
 
 export const monthText = (month: Doc) => blocksToText(month.review)

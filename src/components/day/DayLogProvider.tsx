@@ -4,13 +4,10 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { saveDailyLog, type DailyLogPatch } from '@/app/(frontend)/actions'
 import type { PlanItem } from '@/lib/dayParts'
 import { markSaved, rememberLocal, useRenderStamp, withLocal } from '@/lib/noteCache'
-import type { ToeflSkill } from '@/lib/options'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 
 export type DayLog = {
   habitsDone: number[]
-  toeflMinutes: number
-  toeflSkills: ToeflSkill[]
   themeMinutes: number
   energy: number | null
   morningItems: PlanItem[]
@@ -20,8 +17,6 @@ export type DayLog = {
 
 export const EMPTY_LOG: DayLog = {
   habitsDone: [],
-  toeflMinutes: 0,
-  toeflSkills: [],
   themeMinutes: 0,
   energy: null,
   morningItems: [],

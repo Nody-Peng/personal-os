@@ -1,6 +1,6 @@
 'use client'
 
-import { BookOpenText, Books, ChartLineUp, DotsThreeCircle, GearSix, Lightbulb, MagnifyingGlass, SignOut, SunHorizon, X } from '@phosphor-icons/react'
+import { BookOpenText, Books, DotsThreeCircle, GearSix, Lightbulb, MagnifyingGlass, SignOut, SunHorizon, VideoCamera, X } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -12,7 +12,7 @@ const ITEMS = [
   { href: '/', label: '今天', Icon: SunHorizon },
   { href: '/journal', label: '書架', Icon: Books },
   { href: '/books', label: '閱讀', Icon: BookOpenText },
-  { href: '/toefl', label: '托福', Icon: ChartLineUp },
+  { href: '/channel', label: '頻道', Icon: VideoCamera },
   { href: '/ideas', label: '想學', Icon: Lightbulb },
 ] as const
 

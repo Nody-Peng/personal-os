@@ -23,6 +23,38 @@ export const SCORE_SOURCES = [
   { label: 'AI 估計', value: 'ai' },
 ] as const
 
+/**
+ * The channel's weekly output, ticked off on the week note
+ * (`weekly-reviews.channel`): an AI 報報 every day, two videos, and four
+ * shorts cut from them.
+ */
+export const CHANNEL_GROUPS = [
+  { label: 'AI 報報', value: 'article', count: 7 },
+  { label: '影片', value: 'video', count: 2 },
+  { label: '短影音', value: 'short', count: 4 },
+] as const
+
+export const CHANNEL_SLOTS = [
+  { label: 'AI 報報 · 週一', value: 'article-mon', group: 'article', weekday: 'mon' },
+  { label: 'AI 報報 · 週二', value: 'article-tue', group: 'article', weekday: 'tue' },
+  { label: 'AI 報報 · 週三', value: 'article-wed', group: 'article', weekday: 'wed' },
+  { label: 'AI 報報 · 週四', value: 'article-thu', group: 'article', weekday: 'thu' },
+  { label: 'AI 報報 · 週五', value: 'article-fri', group: 'article', weekday: 'fri' },
+  { label: 'AI 報報 · 週六', value: 'article-sat', group: 'article', weekday: 'sat' },
+  { label: 'AI 報報 · 週日', value: 'article-sun', group: 'article', weekday: 'sun' },
+  { label: 'AI 教學影片', value: 'video-tutorial', group: 'video' },
+  { label: '知識型影片', value: 'video-knowledge', group: 'video' },
+  { label: '短影音 1', value: 'short-1', group: 'short' },
+  { label: '短影音 2', value: 'short-2', group: 'short' },
+  { label: '短影音 3', value: 'short-3', group: 'short' },
+  { label: '短影音 4', value: 'short-4', group: 'short' },
+] as const
+export type ChannelSlot = (typeof CHANNEL_SLOTS)[number]['value']
+
+export function isChannelSlot(value: unknown): value is ChannelSlot {
+  return CHANNEL_SLOTS.some((s) => s.value === value)
+}
+
 export const IDEA_STATUSES = [
   { label: '收件匣', value: 'inbox' },
   { label: '本週主題', value: 'selected' },

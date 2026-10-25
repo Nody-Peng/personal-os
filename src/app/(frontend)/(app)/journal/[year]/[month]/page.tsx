@@ -66,7 +66,6 @@ export default async function MonthPage({ params, searchParams }: Props) {
   const stats = [
     { label: '有紀錄的天數', value: `${monthLogs.filter(isRecordedLog).length} 天` },
     { label: 'Important 完成', value: `${monthImportant.filter((t) => t.status === 'done').length}/${monthImportant.length}` },
-    { label: '托福', value: `${(monthLogs.reduce((s, l) => s + (l.toeflMinutes ?? 0), 0) / 60).toFixed(1)} 小時` },
     ...habits.map((h) => ({ label: h.name, value: `${monthLogs.filter((l) => habitIdsOf(l).includes(h.id)).length} 天` })),
   ]
 

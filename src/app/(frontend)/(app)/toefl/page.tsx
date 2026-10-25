@@ -1,10 +1,8 @@
 import type { Metadata } from 'next'
-import { AddScoreForm } from '@/components/toefl/AddScoreForm'
 import { ScoreChart, type ChartScore } from '@/components/toefl/ScoreChart'
 import { ScoreList } from '@/components/toefl/ScoreList'
-import { WeeklyHours } from '@/components/toefl/WeeklyHours'
-import { addDays, daysBetween, logicalDay } from '@/lib/day'
-import { getLogsBetween, getScores, getSettings, minutesPerWeek, planWeek } from '@/lib/queries'
+import { daysBetween, logicalDay } from '@/lib/day'
+import { getScores, getSettings, planWeek } from '@/lib/queries'
 import { requireSession } from '@/lib/session'
 import { cefrOf, formatBand, legacyRangeOf } from '@/lib/toefl'
 
@@ -19,8 +17,6 @@ export default async function ToeflPage() {
   const [settings, scores] = await Promise.all([getSettings(session), getScores(session)])
 
   const examWeek = settings.examDate ? daysBetween(settings.planStart, settings.examDate) / 7 : DEFAULT_PLAN_WEEKS
-  const weekCount = Math.max(DEFAULT_PLAN_WEEKS, Math.ceil(examWeek))
-  const logs = await getLogsBetween(session, settings.planStart, addDays(settings.planStart, weekCount * 7 - 1))
   const currentWeek = planWeek(settings.planStart, today)
 
   const chartScores: ChartScore[] = scores.map((s) => ({
@@ -51,6 +47,7 @@ export default async function ToeflPage() {
           {cefrOf(settings.targetBand)}
         </p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink-strong md:text-4xl">托福進度</h1>
+        <p className="mt-1 text-sm text-muted">已封存 · 只能查看過去的紀錄</p>
       </header>
 
       <dl className="rise mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
@@ -90,21 +87,7 @@ export default async function ToeflPage() {
         />
       </section>
 
-      <section className="card rise mb-4 p-5 md:p-6" style={{ '--i': 2 } as React.CSSProperties}>
-        <h2 className="mb-4 font-semibold text-ink-strong">每週練習時數</h2>
-        <WeeklyHours
-          weeks={minutesPerWeek(logs, settings.planStart, weekCount)}
-          currentWeek={currentWeek}
-          targetHours={settings.toeflHoursTarget}
-        />
-      </section>
-
-      <section className="card rise mb-4 p-5 md:p-6" style={{ '--i': 3 } as React.CSSProperties}>
-        <h2 className="mb-4 font-semibold text-ink-strong">新增分數</h2>
-        <AddScoreForm today={today} />
-      </section>
-
-      <section className="card rise p-5 md:p-6" style={{ '--i': 4 } as React.CSSProperties}>
+      <section className="card rise p-5 md:p-6" style={{ '--i': 2 } as React.CSSProperties}>
         <h2 className="mb-2 font-semibold text-ink-strong">所有紀錄</h2>
         <ScoreList
           rows={scores.map((s) => ({

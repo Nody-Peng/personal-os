@@ -3,13 +3,13 @@ import Link from 'next/link'
 import { BlockEditor } from '@/components/editor/BlockEditor'
 import { TaskList } from '@/components/tasks/TaskList'
 import { cleanPlanItems } from '@/lib/dayParts'
-import { addDays, daysBetween, formatDayLong, formatDayShort, isoWeek, isoWeekYear, weekStart, weekdayOf } from '@/lib/day'
-import { PLAN_SLOTS, TOEFL_SKILLS, labelOf, type ToeflSkill } from '@/lib/options'
-import { getHabits, getImportantTasks, getLogsBetween, getSettings, getWeekTheme, getWeeklyTasks, habitIdsOf, habitsForPeriod, planWeek } from '@/lib/queries'
+import { addDays, formatDayLong, formatDayShort, isoWeek, isoWeekYear, weekStart, weekdayOf } from '@/lib/day'
+import { getChannelWeeks, getHabits, getImportantTasks, getLogsBetween, getWeekTheme, getWeeklyTasks, habitIdsOf, habitsForPeriod } from '@/lib/queries'
 import { renderStamp } from '@/lib/notes'
 import type { Session } from '@/lib/session'
 import { currentMonday, getCurrentTheme } from '@/lib/weekThemes'
 import { WeekReview } from '@/components/week/WeekReview'
+import { ChannelChecklist } from '@/components/channel/ChannelChecklist'
 import type { DailyLog } from '@/payload-types'
 import { Collapsible } from './Collapsible'
 import { DayLogProvider, EMPTY_LOG, type DayLog } from './DayLogProvider'
@@ -25,8 +25,6 @@ function toDayLog(log: DailyLog | undefined | null): DayLog {
   if (!log) return EMPTY_LOG
   return {
     habitsDone: habitIdsOf(log),
-    toeflMinutes: log.toeflMinutes ?? 0,
-    toeflSkills: (log.toeflSkills ?? []) as ToeflSkill[],
     themeMinutes: log.themeMinutes ?? 0,
     energy: log.energy ?? null,
     morningItems: cleanPlanItems(log.morningItems),
@@ -42,8 +40,8 @@ export async function DayView({ session, day, today }: { session: Session; day: 
   const monday = weekStart(day)
   const nextDay = addDays(day, 1)
 
-  const [settings, weekLogs, nextLogs, important, weekly, theme, allHabits] = await Promise.all([
-    getSettings(session),
+  const [channel, weekLogs, nextLogs, important, weekly, theme, allHabits] = await Promise.all([
+    getChannelWeeks(session, [monday]),
     getLogsBetween(session, monday, addDays(monday, 6)),
     getLogsBetween(session, nextDay, nextDay),
     getImportantTasks(session, day, nextDay),
@@ -59,13 +57,9 @@ export async function DayView({ session, day, today }: { session: Session; day: 
   const week: WeekDay[] = WEEK_LABELS.map((label, i) => {
     const date = addDays(monday, i)
     const l = weekLogs.find((x) => x.date === date)
-    return { date, label, habitsDone: habitIdsOf(l), toeflMinutes: l?.toeflMinutes ?? 0 }
+    return { date, label, habitsDone: habitIdsOf(l) }
   })
 
-  const slot = settings.weekPlan[weekdayOf(day)]
-  const planSkill = TOEFL_SKILLS.some((s) => s.value === slot) ? (slot as ToeflSkill) : null
-  const toeflWeek = planWeek(settings.planStart, day)
-  const daysToExam = settings.examDate ? daysBetween(day, settings.examDate) : null
   const renderedAt = renderStamp()
   const todayImportant = important.filter((t) => t.day === day)
   const nextImportant = important.filter((t) => t.day === nextDay)
@@ -84,7 +78,6 @@ export async function DayView({ session, day, today }: { session: Session; day: 
             <Link href={`/journal/week/${monday}`} className="hover:text-ink-strong hover:underline">
               {isoWeekYear(day)} 第 {isoWeek(day)} 週
             </Link>
-            {toeflWeek >= 1 && ` · 托福第 ${toeflWeek} 週`}
           </p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink-strong md:text-4xl">{formatDayLong(day)}</h1>
           <nav aria-label="切換日期" className="mt-2 flex items-center gap-1 text-sm">
@@ -101,16 +94,6 @@ export async function DayView({ session, day, today }: { session: Session; day: 
             </Link>
           </nav>
         </div>
-        {daysToExam !== null ? (
-          <p className="text-right">
-            <span className="block text-xs text-muted">距離托福考試</span>
-            <span className="text-2xl font-semibold tracking-tight text-ink-strong">{daysToExam >= 0 ? `${daysToExam} 天` : '已考完'}</span>
-          </p>
-        ) : (
-          <Link href="/admin/globals/settings" className="btn btn-quiet">
-            設定考試日期
-          </Link>
-        )}
       </header>
 
       <div className="grid gap-3 md:grid-cols-6 md:gap-4">
@@ -139,13 +122,25 @@ export async function DayView({ session, day, today }: { session: Session; day: 
 
         <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 3 } as React.CSSProperties}>
           <TrackerPanel
-            planLabel={labelOf(PLAN_SLOTS, slot)}
-            planSkill={planSkill}
             themeTitle={theme?.title ?? null}
             weekHref={`/journal/week/${monday}`}
             habits={dayHabits}
             allHabits={allHabits}
           />
+        </section>
+
+        <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 4 } as React.CSSProperties}>
+          <SectionHead
+            title="頻道"
+            meta="本週要發的內容"
+            action={
+              <Link href={monday === currentMonday() ? '/channel' : `/channel?week=${monday}`} className="flex items-center gap-1 text-sm text-accent hover:underline">
+                歷史
+                <ArrowRight size={14} />
+              </Link>
+            }
+          />
+          <ChannelChecklist key={`channel-${monday}`} monday={monday} initial={channel[monday] ?? {}} renderedAt={renderedAt} today={weekdayOf(day)} />
         </section>
 
         <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 4 } as React.CSSProperties}>
@@ -197,7 +192,7 @@ export async function DayView({ session, day, today }: { session: Session; day: 
         </section>
 
         <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 6 } as React.CSSProperties}>
-          <LiveWeekStrip days={week} habits={weekHabits} toeflHoursTarget={settings.toeflHoursTarget} />
+          <LiveWeekStrip days={week} habits={weekHabits} />
         </section>
       </div>
     </DayLogProvider>

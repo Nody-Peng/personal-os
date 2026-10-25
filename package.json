@@ -1,7 +1,7 @@
 {
   "name": "personal-os",
   "version": "1.0.0",
-  "description": "Personal OS: daily check-ins, TOEFL progress and a learning backlog",
+  "description": "Personal OS: daily check-ins, channel publishing checklist, reading and learning backlog.",
   "license": "MIT",
   "type": "module",
   "scripts": {

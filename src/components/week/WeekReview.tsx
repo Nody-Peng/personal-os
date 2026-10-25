@@ -6,7 +6,6 @@ import {
   getIdeas,
   getImportantTasks,
   getLogsBetween,
-  getSettings,
   getWeekReview,
   getWeeklyTasks,
   habitIdsOf,
@@ -23,14 +22,13 @@ import { WeekThemePicker } from './WeekThemePicker'
 export async function WeekReview({ session, monday }: { session: Session; monday: string }) {
   const sunday = addDays(monday, 6)
   const nextMonday = addDays(monday, 7)
-  const [weekly, important, logs, review, nextReview, ideas, settings, allHabits] = await Promise.all([
+  const [weekly, important, logs, review, nextReview, ideas, allHabits] = await Promise.all([
     getWeeklyTasks(session, [monday]),
     getImportantTasks(session, monday, sunday),
     getLogsBetween(session, monday, sunday),
     getWeekReview(session, monday),
     getWeekReview(session, nextMonday),
     getIdeas(session),
-    getSettings(session),
     getHabits(session, true),
   ])
 
@@ -39,10 +37,6 @@ export async function WeekReview({ session, monday }: { session: Session; monday
   const stats = [
     { label: 'Important 完成', value: `${activeImportant.filter((t) => t.status === 'done').length}/${activeImportant.length}` },
     { label: '待辦完成', value: `${weekly.filter((t) => t.status === 'done').length}/${weekly.length}` },
-    {
-      label: '托福',
-      value: `${(logs.reduce((s, l) => s + (l.toeflMinutes ?? 0), 0) / 60).toFixed(1)}/${settings.toeflHoursTarget} 小時`,
-    },
     ...habits.map((h) => ({
       label: h.name,
       value: `${logs.filter((l) => habitIdsOf(l).includes(h.id)).length}/${h.weeklyTarget} 天`,

@@ -11,6 +11,13 @@ export function clampInt(n: unknown, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(Number(n) || 0)))
 }
 
+/** A row id from the client: a positive integer, or the action fails. */
+export function cleanId(value: unknown): number {
+  const n = Number(value)
+  if (!Number.isInteger(n) || n <= 0) throw new Error('找不到這個項目')
+  return n
+}
+
 export function cleanText(value: unknown, max: number): string {
   return String(value ?? '').slice(0, max)
 }

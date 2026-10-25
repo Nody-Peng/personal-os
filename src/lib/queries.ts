@@ -1,6 +1,7 @@
 import 'server-only'
 import type { DailyLog, Idea, Journal, MonthlyNote, Setting, ToeflScore, WeeklyReview } from '@/payload-types'
 import type { HabitIconKey, HabitItem } from './habits'
+import { cleanChannel, type ChannelWeek } from './channel'
 import { toTaskItem, type TaskItem } from './taskItems'
 import { isRecordedLog } from './dailyLog'
 import { addDays, daysBetween } from './day'
@@ -174,6 +175,22 @@ export async function getWeekReview({ payload, user }: Session, monday: string):
     overrideAccess: false,
   })
   return docs[0] ?? null
+}
+
+/** The channel checklist of each Monday given (weeks without a note are empty). */
+export async function getChannelWeeks({ payload, user }: Session, mondays: string[]): Promise<Record<string, ChannelWeek>> {
+  const { docs } = await payload.find({
+    collection: 'weekly-reviews',
+    where: { weekStart: { in: mondays } },
+    limit: mondays.length,
+    depth: 0,
+    select: { weekStart: true, channel: true },
+    user,
+    overrideAccess: false,
+  })
+  const byWeek: Record<string, ChannelWeek> = Object.fromEntries(mondays.map((m) => [m, {}]))
+  for (const doc of docs) byWeek[doc.weekStart] = cleanChannel(doc.channel)
+  return byWeek
 }
 
 export async function getMonthNote({ payload, user }: Session, month: string): Promise<MonthlyNote | null> {

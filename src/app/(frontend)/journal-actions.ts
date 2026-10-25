@@ -1,12 +1,13 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { cleanBlocks, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
+import { cleanBlocks, cleanId, cleanText, fail, type ActionResult } from '@/lib/actionUtils'
 import { addDays, isDay, isMonth, weekStart } from '@/lib/day'
 import { requireActionSession } from '@/lib/session'
 import { MAX_IMPORTANT_PER_DAY, type TaskKind, type TaskStatus } from '@/lib/tasks'
 import { toTaskItem, type TaskDetail, type TaskItem } from '@/lib/taskItems'
 import { HABIT_ICONS, MAX_ACTIVE_HABITS, type HabitIconKey } from '@/lib/habits'
+import { cleanChannel } from '@/lib/channel'
 import { upsertOne } from '@/lib/upsert'
 import { currentMonday, writeWeekTheme } from '@/lib/weekThemes'
 
@@ -73,6 +74,7 @@ export type TaskPatch = Partial<{
 
 export async function updateTask(id: number, patch: TaskPatch): Promise<ActionResult> {
   try {
+    id = cleanId(id)
     const { payload, user } = await requireActionSession()
     const data: TaskPatch = {}
     if ('title' in patch) {
@@ -103,6 +105,7 @@ export async function updateTask(id: number, patch: TaskPatch): Promise<ActionRe
 
 export async function deleteTask(id: number): Promise<ActionResult> {
   try {
+    id = cleanId(id)
     const { payload, user } = await requireActionSession()
     await payload.delete({ collection: 'tasks', id, user, overrideAccess: false })
     refresh()
@@ -115,6 +118,7 @@ export async function deleteTask(id: number): Promise<ActionResult> {
 /** Bullet-journal migration: copy an unfinished IMPORTANT to the next day. */
 export async function moveTaskToNextDay(id: number): Promise<ActionResult> {
   try {
+    id = cleanId(id)
     const { payload, user } = await requireActionSession()
     const task = await payload.findByID({ collection: 'tasks', id, user, overrideAccess: false })
     if (task.kind !== 'important' || !task.day) throw new Error('只有 Important 可以移到明天')
@@ -173,6 +177,7 @@ export async function moveTaskToNextDay(id: number): Promise<ActionResult> {
 
 export async function getTask(id: number): Promise<ActionResult<TaskDetail>> {
   try {
+    id = cleanId(id)
     const { payload, user } = await requireActionSession()
     const task = await payload.findByID({ collection: 'tasks', id, depth: 0, user, overrideAccess: false })
     return {
@@ -186,7 +191,7 @@ export async function getTask(id: number): Promise<ActionResult<TaskDetail>> {
 
 // ---------------------------------------------------------------- week notes
 
-export type WeekNotePatch = Partial<{ review: unknown[] | null; themeReason: string }>
+export type WeekNotePatch = Partial<{ review: unknown[] | null; channelNote: unknown[] | null; themeReason: string }>
 
 export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promise<ActionResult> {
   try {
@@ -194,8 +199,22 @@ export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promis
     const session = await requireActionSession()
     const data: WeekNotePatch = {}
     if ('review' in patch) data.review = cleanBlocks(patch.review)
+    if ('channelNote' in patch) data.channelNote = cleanBlocks(patch.channelNote)
     if ('themeReason' in patch) data.themeReason = cleanText(patch.themeReason, 2000)
     await upsertOne(session, 'weekly-reviews', { weekStart: { equals: monday } }, data, { weekStart: monday, ...data })
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/** The week's channel checklist (the whole of it, so saves landing in order can't lose a tick). */
+export async function saveChannelWeek(monday: string, week: unknown): Promise<ActionResult> {
+  try {
+    if (!isDay(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
+    const channel = cleanChannel(week)
+    const session = await requireActionSession()
+    await upsertOne(session, 'weekly-reviews', { weekStart: { equals: monday } }, { channel }, { weekStart: monday, channel })
     return { ok: true }
   } catch (error) {
     return fail(error)
@@ -224,7 +243,7 @@ export async function setWeekTheme(monday: string, ideaId: number | null): Promi
     if (!isDay(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
     const session = await requireActionSession()
     const { payload, user } = session
-    const id = ideaId == null ? null : Number(ideaId)
+    const id = ideaId == null ? null : cleanId(ideaId)
     await writeWeekTheme(session, monday, id)
 
     if (monday === currentMonday()) {
@@ -295,6 +314,7 @@ export async function createHabit(input: { name: string; icon: HabitIconKey; wee
 
 export async function updateHabit(id: number, patch: HabitPatch): Promise<ActionResult> {
   try {
+    id = cleanId(id)
     const { payload, user } = await requireActionSession()
     await payload.update({ collection: 'habits', id, data: cleanHabit(patch), user, overrideAccess: false })
     refresh()

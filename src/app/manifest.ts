@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: '/',
     name: 'Personal OS',
     short_name: 'Personal OS',
-    description: '每天一頁的日記本：Important、習慣、托福進度與筆記本',
+    description: '每日紀錄、頻道進度、閱讀與學習清單',
     start_url: '/',
     scope: '/',
     display: 'standalone',
@@ -23,7 +23,6 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       { name: '記下想學的東西', short_name: '想學', url: '/ideas' },
-      { name: '托福進度', short_name: '托福', url: '/toefl' },
     ],
   }
 }

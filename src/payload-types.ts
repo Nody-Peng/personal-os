@@ -297,6 +297,30 @@ export interface WeeklyReview {
   theme?: (number | null) | Idea;
   themeReason?: string | null;
   /**
+   * 每格 { done, note }（lib/channel.ts，在前台編輯）
+   */
+  channel?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Notion 式編輯器的區塊資料（在前台編輯）
+   */
+  channelNote?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
    * 儲存時自動產生
    */
   plainText?: string | null;
@@ -786,6 +810,8 @@ export interface WeeklyReviewsSelect<T extends boolean = true> {
   review?: T;
   theme?: T;
   themeReason?: T;
+  channel?: T;
+  channelNote?: T;
   plainText?: T;
   updatedAt?: T;
   createdAt?: T;

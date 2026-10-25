@@ -35,9 +35,21 @@ export const WeeklyReviews: CollectionConfig = {
     },
     { name: 'theme', label: '本週主題', type: 'relationship', relationTo: 'ideas' },
     { name: 'themeReason', label: '選擇原因', type: 'textarea' },
+    {
+      name: 'channel',
+      label: '頻道：本週清單',
+      type: 'json',
+      admin: { description: '每格 { done, note }（lib/channel.ts，在前台編輯）' },
+    },
+    {
+      name: 'channelNote',
+      label: '頻道：本週筆記',
+      type: 'json',
+      admin: { description: 'Notion 式編輯器的區塊資料（在前台編輯）' },
+    },
     searchTextField,
   ],
   hooks: {
-    beforeChange: [searchTextHook(['review', 'themeReason'], weekText)],
+    beforeChange: [searchTextHook(['review', 'themeReason', 'channel', 'channelNote'], weekText)],
   },
 }

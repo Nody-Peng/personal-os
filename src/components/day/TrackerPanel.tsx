@@ -6,40 +6,25 @@ import { useState } from 'react'
 import { HabitIcon } from '@/components/habits/HabitIcon'
 import { HabitsEditor } from '@/components/habits/HabitsEditor'
 import type { HabitItem } from '@/lib/habits'
-import { TOEFL_SKILLS, type ToeflSkill } from '@/lib/options'
 import { useDayLog } from './DayLogProvider'
 
 type Props = {
-  planLabel: string
-  planSkill: ToeflSkill | null
   themeTitle: string | null
   weekHref: string
   habits: HabitItem[]
   allHabits: HabitItem[]
 }
 
-/** Habits, TOEFL minutes, theme time and energy for the day. */
-export function TrackerPanel({ planLabel, planSkill, themeTitle, weekHref, habits, allHabits }: Props) {
+/** Habits, theme time and energy for the day. */
+export function TrackerPanel({ themeTitle, weekHref, habits, allHabits }: Props) {
   const { log, commit } = useDayLog()
   const [editing, setEditing] = useState(false)
 
   const toggleHabit = (id: number) =>
     commit({ habitsDone: log.habitsDone.includes(id) ? log.habitsDone.filter((h) => h !== id) : [...log.habitsDone, id] })
 
-  const addToefl = (delta: number) => {
-    const patch: Parameters<typeof commit>[0] = { toeflMinutes: Math.max(0, log.toeflMinutes + delta) }
-    // The first minutes of the day default to tonight's planned skill.
-    if (delta > 0 && log.toeflSkills.length === 0 && planSkill) patch.toeflSkills = [planSkill]
-    commit(patch)
-  }
-
-  const toggleSkill = (skill: ToeflSkill) => {
-    const has = log.toeflSkills.includes(skill)
-    commit({ toeflSkills: has ? log.toeflSkills.filter((s) => s !== skill) : [...log.toeflSkills, skill] })
-  }
-
   return (
-    <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] md:gap-6">
+    <div className="grid gap-5 md:grid-cols-2 md:gap-6">
       <div>
         <div className="mb-2 flex items-center justify-between">
           <p className="text-sm font-semibold text-ink-strong">每日習慣</p>
@@ -66,49 +51,7 @@ export function TrackerPanel({ planLabel, planSkill, themeTitle, weekHref, habit
         {editing && <HabitsEditor habits={allHabits} onClose={() => setEditing(false)} />}
       </div>
 
-      <div className="md:border-x md:border-line md:px-6">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-ink-strong">托福</p>
-          <span className="tag bg-accent-soft text-accent">今晚：{planLabel}</span>
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <p className="flex items-baseline gap-1.5">
-            <span className="text-4xl font-semibold tracking-tighter text-ink-strong">{log.toeflMinutes}</span>
-            <span className="text-sm text-muted">分鐘</span>
-          </p>
-          <div className="flex gap-1.5">
-            <button type="button" className="btn btn-quiet px-2.5" onClick={() => addToefl(-15)} disabled={log.toeflMinutes === 0} aria-label="減 15 分鐘">
-              <Minus size={14} weight="bold" />
-            </button>
-            {[15, 30].map((m) => (
-              <button key={m} type="button" className="btn btn-primary px-2.5" onClick={() => addToefl(m)} aria-label={`加 ${m} 分鐘`}>
-                <Plus size={14} weight="bold" />
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div role="group" aria-label="練了什麼" className="mt-3 flex flex-wrap gap-1.5">
-          {TOEFL_SKILLS.map(({ value, label }) => {
-            const on = log.toeflSkills.includes(value)
-            return (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggleSkill(value)}
-                className={`rounded-full border px-2.5 py-0.5 text-sm transition-colors ${
-                  on ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line-strong text-ink hover:bg-sunken'
-                }`}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="grid gap-4">
+      <div className="grid gap-4 md:border-l md:border-line md:pl-6">
         <div>
           <div className="flex items-center justify-between gap-2">
             <p className="min-w-0 truncate text-sm text-muted" title={themeTitle ?? undefined}>

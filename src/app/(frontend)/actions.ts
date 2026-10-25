@@ -3,17 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { isDay } from '@/lib/day'
 import { cleanPlanItems, type PlanItem } from '@/lib/dayParts'
-import {
-  IDEA_STATUSES,
-  SCORE_SOURCES,
-  SCORE_TYPES,
-  TOEFL_SKILLS,
-  type IdeaStatus,
-  type ToeflSkill,
-} from '@/lib/options'
-import { clampInt, cleanBlocks, fail, type ActionResult } from '@/lib/actionUtils'
+import { IDEA_STATUSES, type IdeaStatus } from '@/lib/options'
+import { clampInt, cleanBlocks, cleanId, fail, type ActionResult } from '@/lib/actionUtils'
 import { requireActionSession } from '@/lib/session'
-import { SECTIONS, isBand, type Section } from '@/lib/toefl'
 import { upsertOne } from '@/lib/upsert'
 import { currentMonday, storedWeekThemeId, writeWeekTheme } from '@/lib/weekThemes'
 
@@ -21,17 +13,12 @@ export type { ActionResult }
 
 const values = <T extends { value: string }>(options: readonly T[]) =>
   new Set(options.map((o) => o.value))
-const TOEFL_SKILL_VALUES = values(TOEFL_SKILLS)
 const IDEA_STATUS_VALUES = values(IDEA_STATUSES)
-const SCORE_TYPE_VALUES = values(SCORE_TYPES)
-const SCORE_SOURCE_VALUES = values(SCORE_SOURCES)
 
 // ---------------------------------------------------------------- daily logs
 
 export type DailyLogPatch = Partial<{
   habitsDone: number[]
-  toeflMinutes: number
-  toeflSkills: ToeflSkill[]
   themeMinutes: number
   energy: number | null
   morningItems: PlanItem[]
@@ -46,10 +33,7 @@ function cleanLogPatch(patch: DailyLogPatch): DailyLogPatch {
   if ('habitsDone' in patch) {
     out.habitsDone = [...new Set((patch.habitsDone ?? []).map(Number))].filter((id) => Number.isInteger(id) && id > 0)
   }
-  if ('toeflMinutes' in patch) out.toeflMinutes = clampInt(patch.toeflMinutes, 0, 24 * 60)
   if ('themeMinutes' in patch) out.themeMinutes = clampInt(patch.themeMinutes, 0, 24 * 60)
-  if ('toeflSkills' in patch)
-    out.toeflSkills = (patch.toeflSkills ?? []).filter((s) => TOEFL_SKILL_VALUES.has(s))
   if ('energy' in patch) out.energy = patch.energy == null ? null : clampInt(patch.energy, 1, 5)
   if ('morningItems' in patch) out.morningItems = cleanPlanItems(patch.morningItems)
   if ('noonItems' in patch) out.noonItems = cleanPlanItems(patch.noonItems)
@@ -64,63 +48,6 @@ export async function saveDailyLog(day: string, patch: DailyLogPatch): Promise<A
     const session = await requireActionSession()
     const data = cleanLogPatch(patch)
     await upsertOne(session, 'daily-logs', { date: { equals: day } }, data, { date: day, ...data })
-    revalidatePath('/toefl')
-    return { ok: true }
-  } catch (error) {
-    return fail(error)
-  }
-}
-
-// ------------------------------------------------------------- TOEFL scores
-
-export async function addScore(formData: FormData): Promise<ActionResult> {
-  try {
-    const { payload, user } = await requireActionSession()
-    const date = String(formData.get('date') ?? '')
-    const type = String(formData.get('type') ?? '')
-    const source = String(formData.get('source') ?? 'ets')
-
-    if (!isDay(date)) throw new Error('請選擇日期')
-    if (!SCORE_TYPE_VALUES.has(type)) throw new Error('請選擇類型')
-    if (!SCORE_SOURCE_VALUES.has(source)) throw new Error('請選擇來源')
-
-    const bands: Partial<Record<Section, number | null>> = {}
-    for (const { value, label } of SECTIONS) {
-      const raw = String(formData.get(value) ?? '').trim()
-      if (!raw) {
-        bands[value] = null
-        continue
-      }
-      const band = Number(raw)
-      if (!isBand(band)) throw new Error(`${label}的級分要是 1–6，以 0.5 為單位`)
-      bands[value] = band
-    }
-    if (Object.values(bands).every((b) => b == null)) throw new Error('至少要填一科的級分')
-
-    await payload.create({
-      collection: 'toefl-scores',
-      data: {
-        date,
-        type: type as 'mini',
-        source: source as 'ets',
-        ...bands,
-        notes: String(formData.get('notes') ?? '').slice(0, 1000) || null,
-      },
-      user,
-      overrideAccess: false,
-    })
-    revalidatePath('/toefl')
-    return { ok: true }
-  } catch (error) {
-    return fail(error)
-  }
-}
-
-export async function deleteScore(id: number): Promise<ActionResult> {
-  try {
-    const { payload, user } = await requireActionSession()
-    await payload.delete({ collection: 'toefl-scores', id, user, overrideAccess: false })
-    revalidatePath('/toefl')
     return { ok: true }
   } catch (error) {
     return fail(error)
@@ -156,6 +83,7 @@ export type IdeaPatch = Partial<{
 
 export async function updateIdea(id: number, patch: IdeaPatch): Promise<ActionResult> {
   try {
+    id = cleanId(id)
     const { payload, user } = await requireActionSession()
     const data: IdeaPatch = {}
     for (const key of ['scoreGoal', 'scoreUrgency', 'scorePassion'] as const) {
@@ -185,6 +113,7 @@ export async function updateIdea(id: number, patch: IdeaPatch): Promise<ActionRe
 
 export async function deleteIdea(id: number): Promise<ActionResult> {
   try {
+    id = cleanId(id)
     const { payload, user } = await requireActionSession()
     await payload.delete({ collection: 'ideas', id, user, overrideAccess: false })
     revalidatePath('/ideas')
