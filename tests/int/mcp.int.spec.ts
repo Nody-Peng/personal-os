@@ -6,7 +6,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { getPayload, type Payload } from 'payload'
 import sharp from 'sharp'
 import config from '@/payload.config'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mergeBlocks } from '@/lib/blockMerge'
 import { blocksToMarkdown, markdownToBlocks, pageIdFromUrl } from '@/lib/mcp/markdown'
 import { createMcpServer } from '@/lib/mcp/tools'
@@ -159,7 +159,7 @@ describe('MCP tools', () => {
   it('lists its tools', async () => {
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name)).toEqual(
-      expect.arrayContaining(['list_notebooks', 'read_page', 'create_page', 'append_to_page', 'replace_page_content', 'trash_page', 'upload_image', 'read_journal_day', 'read_book_notes']),
+      expect.arrayContaining(['list_notebooks', 'read_page', 'create_page', 'append_to_page', 'replace_page_content', 'trash_page', 'upload_image', 'send_email', 'read_journal_day', 'read_book_notes']),
     )
   })
 
@@ -269,6 +269,38 @@ describe('MCP tools', () => {
 
     const notImage = await call('upload_image', { data_base64: Buffer.from('not a picture').toString('base64'), filename: 'x.png' })
     expect(notImage.isError).toBe(true)
+  })
+
+  it('emails only the owner, and says what is missing without a key', async () => {
+    vi.stubEnv('RESEND_API_KEY', '')
+    vi.stubEnv('MAIL_TO', '')
+    const sent = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ id: 'mail-1' }))
+    try {
+      const off = await call('send_email', { subject: '晨報', text: '內容' })
+      expect(off).toMatchObject({ isError: true, text: expect.stringContaining('RESEND_API_KEY') })
+      expect(sent).not.toHaveBeenCalled()
+
+      vi.stubEnv('RESEND_API_KEY', 're_test')
+      const mail = await call('send_email', { subject: '📅 10/28 晨報', text: '第一行 <b>\n📊 https://claude.ai/artifact/abc。' })
+      expect(mail).toMatchObject({ isError: false, text: `已寄到 ${session.user.email}（mail-1）` })
+      const [url, init] = sent.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('https://api.resend.com/emails')
+      expect(new Headers(init.headers).get('Authorization')).toBe('Bearer re_test')
+      const body = JSON.parse(String(init.body))
+      expect(body).toMatchObject({ to: [session.user.email], subject: '📅 10/28 晨報' })
+      expect(body.html).toContain('第一行 &#60;b&#62;<br>')
+      expect(body.html).toContain('<a href="https://claude.ai/artifact/abc" style="color:#1F3A68">https://claude.ai/artifact/abc</a>。')
+
+      vi.stubEnv('MAIL_TO', 'me@example.test')
+      expect((await call('send_email', { subject: 's', text: 't', to: 'someone@else.test' })).text).toContain('me@example.test')
+      expect(JSON.parse(String((sent.mock.calls[1] as [string, RequestInit])[1].body)).to).toEqual(['me@example.test'])
+
+      sent.mockImplementation(async () => Response.json({ message: 'Invalid API key' }, { status: 403 }))
+      expect(await call('send_email', { subject: 's', text: 't' })).toMatchObject({ isError: true, text: expect.stringContaining('Invalid API key') })
+    } finally {
+      sent.mockRestore()
+      vi.unstubAllEnvs()
+    }
   })
 
   it('reports a bad request as a tool error, not a crash', async () => {
