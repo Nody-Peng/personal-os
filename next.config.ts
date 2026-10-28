@@ -24,10 +24,6 @@ const securityHeaders = [
 const PAGEDJS = './node_modules/pagedjs/dist/paged.esm.js'
 
 const nextConfig: NextConfig = {
-  // BlockNote's Markdown converter for /api/mcp (lib/mcp/markdown.ts) loads its
-  // React package and jsdom: run them from node_modules as they are, since the
-  // server-components build of React they would be bundled with lacks createContext.
-  serverExternalPackages: ['@blocknote/server-util', 'jsdom'],
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
   },

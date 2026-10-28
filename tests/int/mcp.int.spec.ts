@@ -5,7 +5,7 @@ import { getPayload, type Payload } from 'payload'
 import config from '@/payload.config'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mergeBlocks } from '@/lib/blockMerge'
-import { markdownToBlocks, pageIdFromUrl } from '@/lib/mcp/markdown'
+import { blocksToMarkdown, markdownToBlocks, pageIdFromUrl } from '@/lib/mcp/markdown'
 import { createMcpServer } from '@/lib/mcp/tools'
 import { writePageContent } from '@/lib/notebookOps'
 import type { Session } from '@/lib/session'
@@ -52,6 +52,53 @@ describe('Markdown for Claude', () => {
     }[]
     expect(blocks.map((b) => b.type)).toEqual(['heading', 'checkListItem', 'bulletListItem', 'pageLink', 'paragraph'])
     expect(blocks[3].props).toEqual({ pageId: 42, mode: 'link' })
+  })
+
+  it('writes Markdown back the same way it reads it', async () => {
+    const source = [
+      '# 標題',
+      '',
+      '一段 **粗體**、*斜體*、~~刪除~~、`code` 和 [連結](https://example.com)。',
+      '',
+      '- 第一項',
+      '  - 子項目',
+      '- 第二項',
+      '',
+      '1. 一',
+      '2. 二',
+      '',
+      '- [x] 完成的待辦',
+      '- [ ] 還沒做',
+      '',
+      '> 引言',
+      '',
+      '```python',
+      'print("hi")',
+      '```',
+      '',
+      '| 欄 A | 欄 B |',
+      '| --- | --- |',
+      '| 1 | 2 |',
+      '',
+      '---',
+      '',
+      '![圖說](https://example.com/a.png)',
+    ].join('\n')
+    const fake = {} as Session // no page links: nothing to look up
+    const first = await blocksToMarkdown(fake, await markdownToBlocks(source, ORIGIN), ORIGIN)
+    const second = await blocksToMarkdown(fake, await markdownToBlocks(first, ORIGIN), ORIGIN)
+    expect(second).toBe(first)
+    for (const piece of ['# 標題', '**粗體**', '*斜體*', '~~刪除~~', '`code`', '[連結](https://example.com)', '- 第一項\n  - 子項目', '1. 一\n2. 二', '- [x] 完成的待辦', '> 引言', '```python', '| 欄 A | 欄 B |', '---', '![圖說](https://example.com/a.png)']) {
+      expect(first).toContain(piece)
+    }
+  })
+
+  it('keeps literal Markdown characters as text', async () => {
+    const blocks = [p('x', '2 * 3 = 6, file_name, [x]'), { id: 'y', type: 'paragraph', content: [{ type: 'text', text: '# 不是標題', styles: {} }], children: [] }]
+    const md = await blocksToMarkdown({} as Session, blocks, ORIGIN)
+    const back = (await markdownToBlocks(md, ORIGIN)) as { type: string; content: { text: string }[] }[]
+    expect(back.map((b) => b.type)).toEqual(['paragraph', 'paragraph'])
+    expect(back.map((b) => b.content.map((c) => c.text).join(''))).toEqual(['2 * 3 = 6, file_name, [x]', '# 不是標題'])
   })
 
   it('reads page ids from page addresses only', () => {
