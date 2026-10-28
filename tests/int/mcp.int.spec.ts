@@ -1,7 +1,10 @@
+// @vitest-environment node
+// Server code: Payload's upload checks need Node's own Buffer, which jsdom's realm doesn't recognise.
 import { randomBytes } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { getPayload, type Payload } from 'payload'
+import sharp from 'sharp'
 import config from '@/payload.config'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mergeBlocks } from '@/lib/blockMerge'
@@ -156,7 +159,7 @@ describe('MCP tools', () => {
   it('lists its tools', async () => {
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name)).toEqual(
-      expect.arrayContaining(['list_notebooks', 'read_page', 'create_page', 'append_to_page', 'replace_page_content', 'trash_page', 'read_journal_day', 'read_book_notes']),
+      expect.arrayContaining(['list_notebooks', 'read_page', 'create_page', 'append_to_page', 'replace_page_content', 'trash_page', 'upload_image', 'read_journal_day', 'read_book_notes']),
     )
   })
 
@@ -239,6 +242,33 @@ describe('MCP tools', () => {
     } finally {
       await payload.delete({ collection: 'tasks', where: { and: [{ day: { equals: day } }, { title: { equals: 'MCP 測試事項' } }] } })
     }
+  })
+
+  it('stores a picture as a smaller JPEG that a page can show', async () => {
+    const png = await sharp({ create: { width: 3000, height: 1500, channels: 4, background: { r: 31, g: 58, b: 104, alpha: 1 } } })
+      .png()
+      .toBuffer()
+    const upload = await call('upload_image', { data_base64: png.toString('base64'), filename: '晨報 01.png', alt: '第 1 頁', max_side: 1200 })
+    expect(upload).toMatchObject({ isError: false, text: expect.stringContaining('已上傳') })
+    const url = upload.text.match(/^url: (\S+)$/m)?.[1] ?? ''
+    expect(url).toMatch(/^\/api\/media\/file\/[A-Za-z0-9_.-]+\.jpg$/)
+    expect(upload.text).toContain(`markdown: ![第 1 頁](${url})`)
+    const filename = decodeURIComponent(url.split('/').pop()!)
+    const { docs } = await payload.find({ collection: 'media', where: { filename: { equals: filename } }, depth: 0 })
+    try {
+      expect(docs[0]).toMatchObject({ mimeType: 'image/jpeg', width: 1200, height: 600 })
+      expect(docs[0].filesize).toBeLessThan(png.length)
+
+      const page = await call('create_page', { notebook_id: notebookId, title: '有圖的頁面', markdown: `第一段\n\n![第 1 頁](${url})` })
+      const pageId = Number(page.text.match(/\[(\d+)\]/)?.[1])
+      const stored = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0 })
+      expect((stored.content as { type: string; props?: { url?: string } }[])[1]).toMatchObject({ type: 'image', props: { url } })
+    } finally {
+      for (const doc of docs) await payload.delete({ collection: 'media', id: doc.id })
+    }
+
+    const notImage = await call('upload_image', { data_base64: Buffer.from('not a picture').toString('base64'), filename: 'x.png' })
+    expect(notImage.isError).toBe(true)
   })
 
   it('reports a bad request as a tool error, not a crash', async () => {
