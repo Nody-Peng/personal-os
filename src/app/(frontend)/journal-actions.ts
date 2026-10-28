@@ -8,6 +8,7 @@ import { MAX_IMPORTANT_PER_DAY, type TaskKind, type TaskStatus } from '@/lib/tas
 import { toTaskItem, type TaskDetail, type TaskItem } from '@/lib/taskItems'
 import { HABIT_ICONS, MAX_ACTIVE_HABITS, type HabitIconKey } from '@/lib/habits'
 import { cleanChannel } from '@/lib/channel'
+import { createJournalTask } from '@/lib/taskOps'
 import { upsertOne } from '@/lib/upsert'
 import { currentMonday, writeWeekTheme } from '@/lib/weekThemes'
 
@@ -28,34 +29,7 @@ export async function createTask(input: {
   weekStart?: string
 }): Promise<ActionResult<TaskItem>> {
   try {
-    const { payload, user } = await requireActionSession()
-    const title = cleanText(input.title, 200).trim()
-    if (!title) throw new Error('請輸入標題')
-
-    let scope: { day: string } | { weekStart: string }
-    if (input.kind === 'important') {
-      scope = { day: optionalDay(input.day) ?? '' }
-      if (!scope.day) throw new Error('Important 一定要有日期')
-    } else if (input.kind === 'weekly') {
-      const ws = optionalDay(input.weekStart)
-      if (!ws) throw new Error('週待辦一定要屬於某一週')
-      scope = { weekStart: weekStart(ws) }
-    } else {
-      throw new Error('類型錯誤')
-    }
-
-    const { totalDocs } = await payload.count({
-      collection: 'tasks',
-      where: { and: [{ kind: { equals: input.kind } }, ...Object.entries(scope).map(([k, v]) => ({ [k]: { equals: v } }))] },
-      user,
-      overrideAccess: false,
-    })
-    const doc = await payload.create({
-      collection: 'tasks',
-      data: { kind: input.kind, title, status: 'todo', position: totalDocs, ...scope },
-      user,
-      overrideAccess: false,
-    })
+    const doc = await createJournalTask(await requireActionSession(), input)
     refresh()
     return { ok: true, data: toTaskItem(doc) }
   } catch (error) {

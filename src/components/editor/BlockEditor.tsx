@@ -4,12 +4,19 @@ import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { saveDailyLog } from '@/app/(frontend)/actions'
 import { saveMonthNote, saveWeekNote, updateTask } from '@/app/(frontend)/journal-actions'
-import { updatePage } from '@/app/(frontend)/notebook-actions'
+import { syncPage, updatePage, type PageSave } from '@/app/(frontend)/notebook-actions'
 import type { ActionResult } from '@/lib/actionUtils'
+import { mergeBlocks } from '@/lib/blockMerge'
 import type { TemplateKind } from '@/lib/options'
-import { markSaved, rememberLocal, useRenderStamp, withLocal } from '@/lib/noteCache'
+import { knownRev, markSaved, peekLocal, rememberLocal, rememberRev, useRenderStamp, withLocal } from '@/lib/noteCache'
 import { useSaveQueue, type SaveStatus } from '@/lib/useSaveQueue'
 import type { EditorHandle as InnerHandle } from './BlockEditorInner'
+
+/** A short note in the page's toast (NotebookShell / Toast listen); not imported from BlockMenu, which would load BlockNote here. */
+const say = (message: string) => window.dispatchEvent(new CustomEvent('notes:info', { detail: message }))
+
+/** How often an open, idle notebook page asks whether it changed elsewhere. */
+const SYNC_EVERY = 20_000
 
 export type EditorHandle = InnerHandle & {
   /** Saves what was typed (skipping the debounce) and waits until it is stored. */
@@ -30,8 +37,11 @@ export type EditorTarget =
   | { kind: 'month'; month: string }
   | { kind: 'note'; id: number }
 
-/** Notebook pages also report when the server saved (noteCache uses it to spot older renders). */
-function save(target: EditorTarget, blocks: unknown[]): Promise<ActionResult<{ savedAt: number } | undefined>> {
+/**
+ * Notebook pages save against the content revision the editor has, and report
+ * when the server saved (noteCache uses it to spot older renders).
+ */
+function save(target: EditorTarget, blocks: unknown[], baseRev: number | undefined): Promise<ActionResult<PageSave | undefined>> {
   switch (target.kind) {
     case 'day':
       return saveDailyLog(target.day, { note: blocks })
@@ -44,7 +54,7 @@ function save(target: EditorTarget, blocks: unknown[]): Promise<ActionResult<{ s
     case 'month':
       return saveMonthNote(target.month, blocks)
     case 'note':
-      return updatePage(target.id, { content: blocks })
+      return updatePage(target.id, baseRev == null ? { content: blocks } : { content: blocks, baseRev })
   }
 }
 
@@ -92,6 +102,12 @@ type Props = {
   editorHandle?: Ref<EditorHandle>
   /** ↑ / Backspace at the very top of the text go back to the page title. */
   onLeaveTop?: () => void
+  /**
+   * Notebook pages: the content revision of `initial` (note-pages.contentRev).
+   * Saves go against it; a change made elsewhere meanwhile is merged in
+   * (lib/blockMerge), and an idle page picks such changes up by itself.
+   */
+  revision?: number
 }
 
 /** Notion-style editor that autosaves a second after typing stops. */
@@ -108,6 +124,7 @@ export function BlockEditor({
   templateKind,
   editorHandle,
   onLeaveTop,
+  revision,
 }: Props) {
   const { enqueue, settled, status, error } = useSaveQueue()
   // Every editor records its latest document (so a board card edited in the
@@ -116,6 +133,13 @@ export function BlockEditor({
   const key = targetKey(target)
   const [start] = useState(() => (renderedAt == null ? initial : withLocal(key, initial, renderedAt)))
   useRenderStamp(key, renderedAt)
+  // Notebook pages: the revision the text is based on, and that text (the base
+  // of a merge). Starting from a remembered local copy, its revision comes too.
+  const [startRev] = useState(() => (revision == null ? undefined : start === initial ? revision : (knownRev(key) ?? revision)))
+  const rev = useRef(startRev)
+  const base = useRef<unknown[]>(Array.isArray(start) ? start : [])
+  // Bumped when a merge rewrites the text: saves queued before it are stale.
+  const merges = useRef(0)
   const pending = useRef<unknown[] | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const targetRef = useRef(target)
@@ -133,6 +157,27 @@ export function BlockEditor({
   const closed = useRef(false)
   // The retry timer calls the latest flush (set below).
   const retry = useRef<() => void>(() => {})
+  const inner = useRef<InnerHandle>(null)
+
+  /** The page changed elsewhere since our revision: fold both versions together and save that. */
+  const mergeIn = useCallback(
+    (remoteRev: number, remote: unknown[], saving: unknown[]) => {
+      const local = peekLocal<unknown[]>(key) ?? saving
+      const merged = mergeBlocks(base.current as { id?: unknown }[], local as { id?: unknown }[], remote as { id?: unknown }[])
+      merges.current += 1
+      rev.current = remoteRev
+      base.current = remote
+      rememberRev(key, remoteRev)
+      inner.current?.apply(merged)
+      onEditRef.current?.(merged)
+      rememberLocal(key, merged)
+      pending.current = merged
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(() => retry.current(), 0)
+      say('這一頁在別處也改過了，已把兩邊的內容合在一起')
+    },
+    [key],
+  )
 
   const flush = useCallback(() => {
     if (timer.current) clearTimeout(timer.current)
@@ -141,6 +186,7 @@ export function BlockEditor({
     pending.current = null
     if (!blocks) return
     const t = targetRef.current
+    const generation = merges.current
     inFlight.current += 1
     // A failed save (offline, signed out, server hiccup) is tried again with
     // the same document unless newer text is already waiting.
@@ -153,11 +199,25 @@ export function BlockEditor({
     }
     enqueue(async () => {
       try {
-        const result = await save(t, blocks)
-        if (result.ok) {
-          failures.current = 0
-          markSaved(key, blocks, result.data?.savedAt)
-        } else retryLater()
+        // A merge since this was queued already carries this text: save that instead.
+        if (generation !== merges.current) return { ok: true }
+        const result = await save(t, blocks, rev.current)
+        if (!result.ok) {
+          retryLater()
+          return result
+        }
+        failures.current = 0
+        const conflict = result.data?.conflict
+        if (conflict) {
+          if (!closed.current) mergeIn(conflict.rev, conflict.content ?? [], blocks)
+          return { ok: true }
+        }
+        if (result.data?.rev != null) {
+          rev.current = result.data.rev
+          base.current = blocks
+          rememberRev(key, result.data.rev)
+        }
+        markSaved(key, blocks, result.data?.savedAt)
         return result
       } catch (e) {
         retryLater()
@@ -166,7 +226,7 @@ export function BlockEditor({
         inFlight.current -= 1
       }
     })
-  }, [enqueue, key])
+  }, [enqueue, key, mergeIn])
   useEffect(() => {
     retry.current = flush
   })
@@ -209,13 +269,55 @@ export function BlockEditor({
     }
   }, [flush])
 
-  const inner = useRef<InnerHandle>(null)
+  // An open page that isn't being typed in picks up changes made elsewhere
+  // (another tab, Claude): when it comes back into view and every SYNC_EVERY.
+  const pageId = target.kind === 'note' ? target.id : null
+  useEffect(() => {
+    if (pageId == null || startRev == null) return
+    if (rev.current != null) rememberRev(key, rev.current)
+    let busy = false
+    const idle = () => !closed.current && !pending.current && !inFlight.current && !timer.current
+    const check = async () => {
+      if (busy || document.visibilityState !== 'visible' || !idle() || rev.current == null) return
+      busy = true
+      try {
+        const asked = rev.current
+        const result = await syncPage(pageId, asked)
+        const remote = result.ok ? result.data : undefined
+        // Typed meanwhile: that save will meet the change and merge it.
+        if (!remote || remote.content === undefined || remote.rev === asked || rev.current !== asked || !idle()) return
+        const blocks = remote.content ?? []
+        rev.current = remote.rev
+        base.current = blocks
+        rememberRev(key, remote.rev)
+        inner.current?.apply(blocks)
+        onEditRef.current?.(blocks)
+        rememberLocal(key, blocks, { saved: true })
+        say('這一頁在別處更新了，已載入最新內容')
+      } catch {
+        // Offline for a moment: ask again next time.
+      } finally {
+        busy = false
+      }
+    }
+    const onVisible = () => document.visibilityState === 'visible' && void check()
+    const every = window.setInterval(() => void check(), SYNC_EVERY)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      window.clearInterval(every)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [pageId, startRev, key])
+
   useImperativeHandle(
     editorHandle,
     () => ({
       replace: (blocks) => inner.current?.replace(blocks),
       enterFromTitle: (text) => inner.current?.enterFromTitle(text),
       focusStart: () => inner.current?.focusStart(),
+      apply: (blocks) => inner.current?.apply(blocks),
       save: () => {
         flush()
         return settled()

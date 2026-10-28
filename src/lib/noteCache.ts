@@ -62,6 +62,18 @@ export function peekLocal<T>(key: string): T | undefined {
   return local.get(key) as T | undefined
 }
 
+// A notebook page's content revision (note-pages.contentRev) as of the text
+// remembered here, so an editor that starts from that text saves against it.
+const revs = new Map<string, number>()
+
+export function rememberRev(key: string, rev: number) {
+  revs.set(key, rev)
+}
+
+export function knownRev(key: string): number | undefined {
+  return revs.get(key)
+}
+
 /** The server has `value` (or, without one, whatever is latest), saved at server time `at` if known. */
 export function markSaved(key: string, value?: unknown, at?: number) {
   if (at != null) savedAt.set(key, Math.max(at, savedAt.get(key) ?? 0))

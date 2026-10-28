@@ -192,6 +192,7 @@ function PeekBody({ page, onClose }: { page: PageDetail; onClose: () => void }) 
             <BlockEditor
               target={{ kind: 'note', id: page.id }}
               initial={page.content}
+              revision={page.contentRev}
               className="note-editor note-editor-compact"
               placeholder="寫下細節，或按 / 插入區塊…"
               allowUploads

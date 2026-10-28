@@ -96,11 +96,25 @@ export const NotePages: CollectionConfig = {
       index: true,
       admin: { readOnly: true, date: { pickerAppearance: 'dayAndTime' } },
     },
+    {
+      // Goes up by one with every content save, wherever it comes from (the
+      // editor, a restored version, Claude through /api/mcp). An editor saves
+      // against the revision it has, so two writers can't silently overwrite
+      // each other (lib/notebookOps.ts writePageContent).
+      name: 'contentRev',
+      label: '內容版本',
+      type: 'number',
+      defaultValue: 0,
+      admin: { readOnly: true },
+    },
   ],
   hooks: {
     beforeChange: [
       async ({ data, originalDoc, operation, req }) => {
-        if ('content' in data) data.plainText = blocksToText(data.content)
+        if ('content' in data) {
+          data.plainText = blocksToText(data.content)
+          if (operation === 'update') data.contentRev = (Number(originalDoc?.contentRev) || 0) + 1
+        }
 
         // 上級項目: another item on the same board, without loops.
         const parentItemId = idOf({ ...originalDoc, ...data }.parentItem)

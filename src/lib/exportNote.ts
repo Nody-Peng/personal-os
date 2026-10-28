@@ -7,86 +7,8 @@
 
 import { BlockNoteEditor } from '@blocknote/core'
 import { getPageLinks } from '@/app/(frontend)/notebook-actions'
-import { parseNoteIcon } from './noteIcons'
+import { linkedPageIds, toStandardBlocks, type LinkedPage, type LooseBlock } from './noteStandard'
 import { UNTITLED } from './notes'
-
-type Loose = { id?: string; type?: string; props?: Record<string, unknown>; content?: unknown; children?: unknown[] }
-
-const DEFAULT_TYPES = new Set([
-  'paragraph',
-  'heading',
-  'quote',
-  'codeBlock',
-  'bulletListItem',
-  'numberedListItem',
-  'checkListItem',
-  'toggleListItem',
-  'table',
-  'image',
-  'video',
-  'audio',
-  'file',
-  'divider',
-])
-
-const text = (value: string) => ({ type: 'text', text: value, styles: {} })
-const link = (href: string, label: string) => ({ type: 'link', href, content: [text(label)] })
-const absolute = (url: string) => (url.startsWith('/') ? `${window.location.origin}${url}` : url)
-
-function collectIds(blocks: Loose[], out = new Set<number>()): Set<number> {
-  for (const b of blocks) {
-    if (b.type === 'pageLink') out.add(Number(b.props?.pageId))
-    if (b.type === 'board') out.add(Number(b.props?.boardId))
-    if (Array.isArray(b.children)) collectIds(b.children as Loose[], out)
-  }
-  return out
-}
-
-function toStandard(blocks: Loose[], titles: Map<number, { title: string; notebookId: number }>): Loose[] {
-  const out: Loose[] = []
-  for (const b of blocks) {
-    const children = Array.isArray(b.children) ? toStandard(b.children as Loose[], titles) : []
-    const pageLink = (id: number, prefix = '') => {
-      const info = titles.get(id)
-      return { type: 'paragraph', content: [text(prefix), info ? link(absolute(`/notebooks/${info.notebookId}/${id}`), info.title || UNTITLED) : text('（找不到的頁面）')] }
-    }
-    switch (b.type) {
-      case 'columnList':
-      case 'column':
-        out.push(...children)
-        continue
-      case 'toc':
-        continue
-      case 'pageLink':
-        out.push(pageLink(Number(b.props?.pageId)))
-        continue
-      case 'board':
-        out.push(pageLink(Number(b.props?.boardId), '看板：'))
-        continue
-      case 'callout': {
-        const icon = parseNoteIcon(String(b.props?.emoji ?? ''))
-        const lead = icon?.kind === 'emoji' ? `${icon.emoji} ` : ''
-        out.push({ type: 'quote', content: [text(lead), ...(Array.isArray(b.content) ? b.content : [])], children })
-        continue
-      }
-      case 'codeBlock':
-        out.push({ ...b, props: { language: b.props?.language ?? 'text' }, children })
-        if (b.props?.caption) out.push({ type: 'paragraph', content: [{ ...text(String(b.props.caption)), styles: { italic: true } }] })
-        continue
-    }
-    if (DEFAULT_TYPES.has(String(b.type))) {
-      const props = { ...b.props }
-      if (typeof props.url === 'string') props.url = absolute(props.url)
-      out.push({ ...b, props, children })
-      continue
-    }
-    // Anything else with an address (bookmarks, embeds) becomes a link.
-    const url = typeof b.props?.url === 'string' ? absolute(b.props.url) : ''
-    if (url) out.push({ type: 'paragraph', content: [link(url, String(b.props?.title || url))] }, ...children)
-    else out.push(...children)
-  }
-  return out
-}
 
 let headless: BlockNoteEditor | null = null
 const editor = () => (headless ??= BlockNoteEditor.create())
@@ -105,14 +27,14 @@ const safeName = (title: string) => (title.trim() || UNTITLED).replace(/[\\/:*?"
 const escapeHtml = (value: string) => value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
 export async function exportPage(format: 'markdown' | 'html', title: string, blocks: unknown[] | null): Promise<void> {
-  const doc = (Array.isArray(blocks) ? blocks : []) as Loose[]
-  const ids = [...collectIds(doc)].filter((n) => n > 0)
-  const titles = new Map<number, { title: string; notebookId: number }>()
+  const doc = (Array.isArray(blocks) ? blocks : []) as LooseBlock[]
+  const ids = [...linkedPageIds(doc)]
+  const titles = new Map<number, LinkedPage>()
   if (ids.length) {
     const result = await getPageLinks(ids)
     if (result.ok) for (const p of result.data ?? []) titles.set(p.id, p)
   }
-  const standard = toStandard(doc, titles) as Parameters<BlockNoteEditor['blocksToMarkdownLossy']>[0]
+  const standard = toStandardBlocks(doc, titles, window.location.origin) as Parameters<BlockNoteEditor['blocksToMarkdownLossy']>[0]
   const heading = title.trim() || UNTITLED
 
   if (format === 'markdown') {
@@ -168,7 +90,7 @@ export async function parseImport(file: File): Promise<{ title: string; blocks: 
   }
   const blocks: unknown[] = isHtml ? await editor().tryParseHTMLToBlocks(source) : await editor().tryParseMarkdownToBlocks(source)
   // Our own HTML export repeats the title as the first heading.
-  const first = blocks[0] as Loose | undefined
+  const first = blocks[0] as LooseBlock | undefined
   const firstText = Array.isArray(first?.content) ? first.content.map((c) => (c as { text?: string }).text ?? '').join('') : ''
   if (first?.type === 'heading' && firstText.trim() === title) blocks.shift()
   return { title, blocks }

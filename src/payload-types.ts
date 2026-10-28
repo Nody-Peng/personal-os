@@ -463,6 +463,7 @@ export interface NotePage {
    */
   plainText?: string | null;
   editedAt?: string | null;
+  contentRev?: number | null;
   updatedAt: string;
   createdAt: string;
   deletedAt?: string | null;
@@ -880,6 +881,7 @@ export interface NotePagesSelect<T extends boolean = true> {
   content?: T;
   plainText?: T;
   editedAt?: T;
+  contentRev?: T;
   updatedAt?: T;
   createdAt?: T;
   deletedAt?: T;

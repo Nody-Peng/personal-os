@@ -41,6 +41,11 @@ export type EditorHandle = {
   enterFromTitle: (text: string) => void
   /** ↓ in the page title: the caret to the start of the first block. */
   focusStart: () => void
+  /**
+   * A version saved elsewhere (another tab, Claude): applied without a save or
+   * an undo step, changing only the blocks that differ so the caret stays put.
+   */
+  apply: (blocks: unknown[]) => void
 }
 
 type Props = {
@@ -169,7 +174,51 @@ export default function BlockEditorInner({
     }
     editor.focus()
   }, [editor])
-  useImperativeHandle(handle, () => ({ replace, enterFromTitle, focusStart }), [replace, enterFromTitle, focusStart])
+  // An empty note offers templates (TemplateBar) until something is written.
+  const [blank, setBlank] = useState(() => isBlankDocument(editor.document))
+
+  // True while `apply` changes the document: that isn't the user's edit to save.
+  const quiet = useRef(false)
+  const apply = useCallback(
+    (blocks: unknown[]) => {
+      type Loose = PartialBlock<typeof editorSchema.blockSchema> & { id: string }
+      const next = (blocks.length ? blocks : [{ type: 'paragraph' }]) as Loose[]
+      quiet.current = true
+      try {
+        editor.transact((tr) => {
+          tr.setMeta('addToHistory', false)
+          const current = editor.document
+          const nextIds = new Set(next.map((b) => b.id))
+          const currentIds = new Set(current.map((b) => b.id))
+          const kept = current.filter((b) => nextIds.has(b.id)).map((b) => b.id)
+          // Blocks moved around (or nothing in common): just take the new version.
+          if (!kept.length || kept.join() !== next.filter((b) => currentIds.has(b.id)).map((b) => b.id).join()) {
+            editor.replaceBlocks(current, next)
+            return
+          }
+          const gone = current.filter((b) => !nextIds.has(b.id))
+          if (gone.length) editor.removeBlocks(gone)
+          let previous: string | null = null
+          for (const block of next) {
+            const old = current.find((b) => b.id === block.id)
+            if (old) {
+              if (JSON.stringify(old) !== JSON.stringify(block)) editor.updateBlock(block.id, block)
+            } else if (previous) {
+              editor.insertBlocks([block], previous, 'after')
+            } else {
+              editor.insertBlocks([block], kept[0], 'before')
+            }
+            previous = block.id
+          }
+        })
+      } finally {
+        quiet.current = false
+      }
+      if (templateKind) setBlank(isBlankDocument(editor.document))
+    },
+    [editor, templateKind],
+  )
+  useImperativeHandle(handle, () => ({ replace, enterFromTitle, focusStart, apply }), [replace, enterFromTitle, focusStart, apply])
 
   const closeIfEmpty = useCallback(
     <T,>(items: T[]): T[] => {
@@ -178,9 +227,6 @@ export default function BlockEditorInner({
     },
     [editor],
   )
-
-  // An empty note offers templates (TemplateBar) until something is written.
-  const [blank, setBlank] = useState(() => isBlankDocument(editor.document))
 
   // Pictures full screen: double-click one (click on a locked page) or ⤢ in its toolbar.
   const [viewer, setViewer] = useState<{ images: LightboxImage[]; start: number } | null>(null)
@@ -234,6 +280,7 @@ export default function BlockEditorInner({
         formattingToolbar={false}
         className={`journal-editor ${className}`}
         onChange={() => {
+          if (quiet.current) return
           onChange(editor.document as unknown[])
           if (templateKind) setBlank(isBlankDocument(editor.document))
         }}

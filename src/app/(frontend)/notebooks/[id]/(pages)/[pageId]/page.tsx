@@ -43,6 +43,7 @@ export default async function NotePage({ params }: Props) {
         title: page.title ?? '',
         icon: page.icon ?? '',
         content: Array.isArray(page.content) ? page.content : null,
+        contentRev: Number(page.contentRev) || 0,
         cover: page.cover ?? '',
         coverPosition: page.coverPosition ?? 50,
         font: page.font ?? 'default',

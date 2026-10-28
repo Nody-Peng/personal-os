@@ -33,6 +33,8 @@ export type PageData = {
   title: string
   icon: string
   content: unknown[] | null
+  /** The revision of `content` (note-pages.contentRev): the editor saves against it. */
+  contentRev: number
   cover: string
   coverPosition: number
   font: PageFont
@@ -369,7 +371,9 @@ export function PageView({ page: serverPage, renderedAt }: { page: PageData; ren
               <BlockEditor
                 key={id}
                 target={{ kind: 'note', id }}
-                initial={page.content}
+                // The server's text and its revision; the editor itself prefers newer text typed here (noteCache).
+                initial={serverPage.content}
+                revision={serverPage.contentRev}
                 renderedAt={renderedAt}
                 editable={!locked}
                 className="note-editor"
