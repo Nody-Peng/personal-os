@@ -492,8 +492,6 @@ export function createMcpServer(ctx: McpContext): McpServer {
         }
         const note = await blocksToMarkdown(session, review?.review, origin)
         lines.push('', '## 週回顧', note || '（沒有寫）')
-        const channel = await blocksToMarkdown(session, (review as { channelNote?: unknown } | null)?.channelNote, origin)
-        if (channel) lines.push('', '## 頻道筆記', channel)
         return lines.join('\n')
       }),
   )

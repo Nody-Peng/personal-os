@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: '/',
     name: 'Personal OS',
     short_name: 'Personal OS',
-    description: '每日紀錄、頻道進度、閱讀與學習清單',
+    description: '每日紀錄、筆記本、閱讀與學習清單',
     start_url: '/',
     scope: '/',
     display: 'standalone',

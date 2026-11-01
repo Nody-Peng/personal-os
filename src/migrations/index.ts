@@ -15,6 +15,7 @@ import * as migration_20261009_063753_book_shelves_highlights from './20261009_0
 import * as migration_20261011_145911_notebook_last_page from './20261011_145911_notebook_last_page';
 import * as migration_20261025_050100_channel_checklist from './20261025_050100_channel_checklist';
 import * as migration_20261028_144958_page_content_rev from './20261028_144958_page_content_rev';
+import * as migration_20261101_132227_remove_channel from './20261101_132227_remove_channel';
 
 export const migrations = [
   {
@@ -100,6 +101,11 @@ export const migrations = [
   {
     up: migration_20261028_144958_page_content_rev.up,
     down: migration_20261028_144958_page_content_rev.down,
-    name: '20261028_144958_page_content_rev'
+    name: '20261028_144958_page_content_rev',
+  },
+  {
+    up: migration_20261101_132227_remove_channel.up,
+    down: migration_20261101_132227_remove_channel.down,
+    name: '20261101_132227_remove_channel'
   },
 ];

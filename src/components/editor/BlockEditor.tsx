@@ -33,7 +33,6 @@ export type EditorTarget =
   | { kind: 'day'; day: string }
   | { kind: 'task'; id: number }
   | { kind: 'week'; monday: string }
-  | { kind: 'channel'; monday: string }
   | { kind: 'month'; month: string }
   | { kind: 'note'; id: number }
 
@@ -49,8 +48,6 @@ function save(target: EditorTarget, blocks: unknown[], baseRev: number | undefin
       return updateTask(target.id, { body: blocks })
     case 'week':
       return saveWeekNote(target.monday, { review: blocks })
-    case 'channel':
-      return saveWeekNote(target.monday, { channelNote: blocks })
     case 'month':
       return saveMonthNote(target.month, blocks)
     case 'note':
@@ -66,8 +63,6 @@ function targetKey(target: EditorTarget): string {
       return `doc:task:${target.id}`
     case 'week':
       return `doc:week:${target.monday}`
-    case 'channel':
-      return `doc:channel:${target.monday}`
     case 'month':
       return `doc:month:${target.month}`
     case 'note':

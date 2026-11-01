@@ -7,7 +7,6 @@ import { requireActionSession } from '@/lib/session'
 import { MAX_IMPORTANT_PER_DAY, type TaskKind, type TaskStatus } from '@/lib/tasks'
 import { toTaskItem, type TaskDetail, type TaskItem } from '@/lib/taskItems'
 import { HABIT_ICONS, MAX_ACTIVE_HABITS, type HabitIconKey } from '@/lib/habits'
-import { cleanChannel } from '@/lib/channel'
 import { createJournalTask } from '@/lib/taskOps'
 import { upsertOne } from '@/lib/upsert'
 import { currentMonday, writeWeekTheme } from '@/lib/weekThemes'
@@ -165,7 +164,7 @@ export async function getTask(id: number): Promise<ActionResult<TaskDetail>> {
 
 // ---------------------------------------------------------------- week notes
 
-export type WeekNotePatch = Partial<{ review: unknown[] | null; channelNote: unknown[] | null; themeReason: string }>
+export type WeekNotePatch = Partial<{ review: unknown[] | null; themeReason: string }>
 
 export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promise<ActionResult> {
   try {
@@ -173,22 +172,8 @@ export async function saveWeekNote(monday: string, patch: WeekNotePatch): Promis
     const session = await requireActionSession()
     const data: WeekNotePatch = {}
     if ('review' in patch) data.review = cleanBlocks(patch.review)
-    if ('channelNote' in patch) data.channelNote = cleanBlocks(patch.channelNote)
     if ('themeReason' in patch) data.themeReason = cleanText(patch.themeReason, 2000)
     await upsertOne(session, 'weekly-reviews', { weekStart: { equals: monday } }, data, { weekStart: monday, ...data })
-    return { ok: true }
-  } catch (error) {
-    return fail(error)
-  }
-}
-
-/** The week's channel checklist (the whole of it, so saves landing in order can't lose a tick). */
-export async function saveChannelWeek(monday: string, week: unknown): Promise<ActionResult> {
-  try {
-    if (!isDay(monday) || weekStart(monday) !== monday) throw new Error('週的日期錯誤')
-    const channel = cleanChannel(week)
-    const session = await requireActionSession()
-    await upsertOne(session, 'weekly-reviews', { weekStart: { equals: monday } }, { channel }, { weekStart: monday, channel })
     return { ok: true }
   } catch (error) {
     return fail(error)

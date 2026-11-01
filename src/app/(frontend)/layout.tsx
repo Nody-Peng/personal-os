@@ -14,7 +14,7 @@ const notoEmoji = Noto_Color_Emoji({ weight: '400', preload: false, variable: '-
 
 export const metadata: Metadata = {
   title: { default: 'Personal OS', template: '%s · Personal OS' },
-  description: '每日紀錄、頻道進度、閱讀與學習清單',
+  description: '每日紀錄、筆記本、閱讀與學習清單',
   appleWebApp: { capable: true, title: 'Personal OS', statusBarStyle: 'default' },
 }
 

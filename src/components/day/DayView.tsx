@@ -4,12 +4,11 @@ import { BlockEditor } from '@/components/editor/BlockEditor'
 import { TaskList } from '@/components/tasks/TaskList'
 import { cleanPlanItems } from '@/lib/dayParts'
 import { addDays, formatDayLong, formatDayShort, isoWeek, isoWeekYear, weekStart, weekdayOf } from '@/lib/day'
-import { getChannelWeeks, getHabits, getImportantTasks, getLogsBetween, getWeekTheme, getWeeklyTasks, habitIdsOf, habitsForPeriod } from '@/lib/queries'
+import { getHabits, getImportantTasks, getLogsBetween, getWeekTheme, getWeeklyTasks, habitIdsOf, habitsForPeriod } from '@/lib/queries'
 import { renderStamp } from '@/lib/notes'
 import type { Session } from '@/lib/session'
 import { currentMonday, getCurrentTheme } from '@/lib/weekThemes'
 import { WeekReview } from '@/components/week/WeekReview'
-import { ChannelChecklist } from '@/components/channel/ChannelChecklist'
 import type { DailyLog } from '@/payload-types'
 import { Collapsible } from './Collapsible'
 import { DayLogProvider, EMPTY_LOG, type DayLog } from './DayLogProvider'
@@ -40,8 +39,7 @@ export async function DayView({ session, day, today }: { session: Session; day: 
   const monday = weekStart(day)
   const nextDay = addDays(day, 1)
 
-  const [channel, weekLogs, nextLogs, important, weekly, theme, allHabits] = await Promise.all([
-    getChannelWeeks(session, [monday]),
+  const [weekLogs, nextLogs, important, weekly, theme, allHabits] = await Promise.all([
     getLogsBetween(session, monday, addDays(monday, 6)),
     getLogsBetween(session, nextDay, nextDay),
     getImportantTasks(session, day, nextDay),
@@ -127,20 +125,6 @@ export async function DayView({ session, day, today }: { session: Session; day: 
             habits={dayHabits}
             allHabits={allHabits}
           />
-        </section>
-
-        <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 4 } as React.CSSProperties}>
-          <SectionHead
-            title="頻道"
-            meta="本週要發的內容"
-            action={
-              <Link href={monday === currentMonday() ? '/channel' : `/channel?week=${monday}`} className="flex items-center gap-1 text-sm text-accent hover:underline">
-                歷史
-                <ArrowRight size={14} />
-              </Link>
-            }
-          />
-          <ChannelChecklist key={`channel-${monday}`} monday={monday} initial={channel[monday] ?? {}} renderedAt={renderedAt} today={weekdayOf(day)} />
         </section>
 
         <section className="card rise p-5 md:col-span-6 md:p-6" style={{ '--i': 4 } as React.CSSProperties}>
