@@ -11,15 +11,18 @@ import { TRASH_DAYS } from './notes'
 //   3. Uploaded files nothing refers to any more are marked, and deleted
 //      (from Supabase Storage too) once they've stayed unused for a week, so
 //      an image cut and pasted back days later still works.
+//   4. MCP activity older than ACTIVITY_DAYS is removed.
 
 const DAY = 86_400_000
 const UNUSED_DAYS = 7
+const ACTIVITY_DAYS = 90
 const PAGE_SIZE = 200
 const MEDIA_PATH = '/api/media/file/'
 // Never read for references: the files themselves and Payload's own records.
-const SKIP = new Set<string>(['media', 'users', 'payload-locked-documents', 'payload-preferences', 'payload-migrations'])
+// MCP activity mentions files it uploaded, but that alone mustn't keep them.
+const SKIP = new Set<string>(['media', 'users', 'mcp-keys', 'mcp-activity', 'payload-locked-documents', 'payload-preferences', 'payload-migrations'])
 
-export type DailyReport = { pagesPurged: number; snapshotsRemoved: number; mediaMarked: number; mediaKept: number; mediaDeleted: number }
+export type DailyReport = { pagesPurged: number; snapshotsRemoved: number; mediaMarked: number; mediaKept: number; mediaDeleted: number; activityRemoved: number }
 
 /**
  * Everything stored (trashed pages and snapshots included), as JSON text to
@@ -46,7 +49,7 @@ const mentions = (text: string, filename: string) =>
   text.includes(MEDIA_PATH + encodeURIComponent(filename)) || text.includes(JSON.stringify(MEDIA_PATH + filename).slice(1, -1))
 
 export async function runDailyJobs(payload: Payload, now = new Date()): Promise<DailyReport> {
-  const report: DailyReport = { pagesPurged: 0, snapshotsRemoved: 0, mediaMarked: 0, mediaKept: 0, mediaDeleted: 0 }
+  const report: DailyReport = { pagesPurged: 0, snapshotsRemoved: 0, mediaMarked: 0, mediaKept: 0, mediaDeleted: 0, activityRemoved: 0 }
 
   const trashCutoff = new Date(now.getTime() - TRASH_DAYS * DAY).toISOString()
   const purged = await payload.delete({ collection: 'note-pages', where: { deletedAt: { less_than: trashCutoff } }, trash: true, depth: 0 })
@@ -54,6 +57,10 @@ export async function runDailyJobs(payload: Payload, now = new Date()): Promise<
 
   const orphans = await payload.delete({ collection: 'page-snapshots', where: { page: { exists: false } }, depth: 0 })
   report.snapshotsRemoved = orphans.docs.length
+
+  const activityCutoff = new Date(now.getTime() - ACTIVITY_DAYS * DAY).toISOString()
+  const oldActivity = await payload.delete({ collection: 'mcp-activity', where: { createdAt: { less_than: activityCutoff } }, depth: 0 })
+  report.activityRemoved = oldActivity.docs.length
 
   const text = await storedText(payload)
   const unusedCutoff = now.getTime() - UNUSED_DAYS * DAY

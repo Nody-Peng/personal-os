@@ -188,10 +188,7 @@ function joinBlocks(blocks: LooseBlock[], w: Writer): string {
     .join('\n\n')
 }
 
-/** A page's (or a journal note's) blocks as Markdown; page links use their current titles. */
-export async function blocksToMarkdown({ payload, user }: Session, blocks: unknown, origin: string): Promise<string> {
-  const doc = (Array.isArray(blocks) ? blocks : []) as LooseBlock[]
-  if (!doc.length) return ''
+async function writerFor({ payload, user }: Session, doc: LooseBlock[], origin: string): Promise<Writer> {
   const ids = [...linkedPageIds(doc)]
   const titles = new Map<number, LinkedPage>()
   if (ids.length) {
@@ -208,7 +205,145 @@ export async function blocksToMarkdown({ payload, user }: Session, blocks: unkno
       titles.set(p.id, { title: p.title ?? '', notebookId: typeof p.notebook === 'number' ? p.notebook : p.notebook.id })
     }
   }
-  return joinBlocks(doc, { titles, origin }).trim()
+  return { titles, origin }
+}
+
+/** A page's (or a journal note's) blocks as Markdown; page links use their current titles. */
+export async function blocksToMarkdown(session: Session, blocks: unknown, origin: string): Promise<string> {
+  const doc = (Array.isArray(blocks) ? blocks : []) as LooseBlock[]
+  if (!doc.length) return ''
+  return joinBlocks(doc, await writerFor(session, doc, origin)).trim()
+}
+
+// ---------------------------------------------- what Markdown can't carry
+
+// Markdown can't hold every block the editor makes (boards, columns, toggles,
+// callouts, bookmarks, colours…). A top-level block whose Markdown doesn't read
+// back into the very same block is "lossy": pageMarkdown wraps it in
+//   <!-- keep:<block id> 看板 -->  …readable text…  <!-- /keep -->
+// and markdownToBlocks turns such a pair back into the original block,
+// untouched, so rewriting a page can't flatten what Claude can't see.
+
+const KEEP_OPEN = /^(\s*)<!--\s*keep:([A-Za-z0-9_-]{1,64})\b[^>]*-->\s*$/
+const KEEP_CLOSE = /^\s*<!--\s*\/keep\s*-->\s*$/
+const BLOCK_MARK = /^\s*<!--\s*block:[A-Za-z0-9_-]{1,64}\b[^>]*-->\s*$/
+const KEEP_REF = /^<!--\s*keepref:([A-Za-z0-9_-]{1,64})\s*-->$/
+
+const BLOCK_LABELS: Record<string, string> = {
+  board: '看板',
+  columnList: '多欄',
+  toggleListItem: '摺疊清單',
+  callout: '提示框',
+  bookmark: '書籤',
+  embed: '嵌入',
+  toc: '目錄',
+  image: '圖片',
+  video: '影片',
+  audio: '音訊',
+  file: '檔案',
+  table: '表格',
+  pageLink: '子頁面',
+  codeBlock: '程式碼',
+  heading: '標題（含格式）',
+  quote: '引言（含格式）',
+}
+export const blockLabel = (block: LooseBlock) => BLOCK_LABELS[String(block.type)] ?? '含顏色或排版的段落'
+
+/** Comparable form of a block: no ids, no props left at the editor's defaults, text runs merged. */
+function normal(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const items = value.map(normal)
+    const merged: unknown[] = []
+    for (const item of items) {
+      const last = merged[merged.length - 1] as Record<string, unknown> | undefined
+      const run = item as Record<string, unknown>
+      if (last?.type === 'text' && run?.type === 'text' && JSON.stringify(last.styles ?? {}) === JSON.stringify(run.styles ?? {})) {
+        merged[merged.length - 1] = { ...last, text: String(last.text ?? '') + String(run.text ?? '') }
+      } else merged.push(item)
+    }
+    return merged
+  }
+  if (!value || typeof value !== 'object') return value
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(value).sort()) {
+    if (key === 'id') continue
+    const v = normal((value as Record<string, unknown>)[key])
+    if (v == null || v === false || v === '' || v === 'default' || v === 'left') continue
+    if (Array.isArray(v) && !v.length) continue
+    if (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v as object).length) continue
+    out[key] = v
+  }
+  // Spaces at either end of a block's text don't survive Markdown, and don't matter.
+  if (typeof out.type === 'string' && Array.isArray(out.content)) {
+    const runs = out.content as Record<string, unknown>[]
+    const first = runs[0]
+    const last = runs[runs.length - 1]
+    if (first?.type === 'text') runs[0] = { ...first, text: String(first.text ?? '').trimStart() }
+    if (last?.type === 'text') runs[runs.length - 1] = { ...runs[runs.length - 1], text: String(runs[runs.length - 1].text ?? '').trimEnd() }
+    out.content = runs.filter((r) => !(r.type === 'text' && !r.text))
+    if (!(out.content as unknown[]).length) delete out.content
+  }
+  return out
+}
+
+const isBlankParagraph = (block: LooseBlock) =>
+  block.type === 'paragraph' && !(Array.isArray(block.children) && block.children.length) && JSON.stringify(normal({ type: 'paragraph', props: block.props, content: block.content })) === '{"type":"paragraph"}'
+
+/** Whether a block comes back unchanged from its own Markdown. */
+function readsBack(block: LooseBlock, w: Writer): boolean {
+  if (isBlankParagraph(block)) return true
+  const markdown = joinBlocks([block], w).trim()
+  if (!markdown) return false
+  const back = blocksFrom(parse(markdown).children, { origin: w.origin, used: new Set() })
+  return back.length === 1 && JSON.stringify(normal(back[0])) === JSON.stringify(normal(block))
+}
+
+/**
+ * A page as Markdown for Claude, with Markdown-proof blocks wrapped in keep
+ * markers (`lossy`: their ids and labels). `blockIds` also marks every other
+ * top-level block with `<!-- block:<id> -->`, for the block-editing tools.
+ */
+export async function pageMarkdown(
+  session: Session,
+  blocks: unknown,
+  origin: string,
+  opts: { blockIds?: boolean } = {},
+): Promise<{ markdown: string; lossy: Map<string, string> }> {
+  const doc = (Array.isArray(blocks) ? blocks : []) as LooseBlock[]
+  const lossy = new Map<string, string>()
+  if (!doc.length) return { markdown: '', lossy }
+  const w = await writerFor(session, doc, origin)
+  const parts: string[] = []
+  let run: LooseBlock[] = []
+  const flush = () => {
+    const text = joinBlocks(run, w).trim()
+    if (text) parts.push(text)
+    run = []
+  }
+  for (const block of doc) {
+    const id = typeof block.id === 'string' ? block.id : ''
+    if (id && !readsBack(block, w)) {
+      flush()
+      const label = blockLabel(block)
+      lossy.set(id, label)
+      const inner = joinBlocks([block], w).trim() || `（${label}）`
+      parts.push(`<!-- keep:${id} ${label} -->\n\n${inner}\n\n<!-- /keep -->`)
+    } else if (opts.blockIds && id && !isBlankParagraph(block)) {
+      flush()
+      parts.push(`<!-- block:${id} -->\n${joinBlocks([block], w).trim()}`)
+    } else run.push(block)
+  }
+  flush()
+  return { markdown: parts.join('\n\n'), lossy }
+}
+
+/** Every block id in a document, nested ones included. */
+export function blockIds(blocks: unknown, out = new Set<string>()): Set<string> {
+  for (const b of (Array.isArray(blocks) ? blocks : []) as LooseBlock[]) {
+    if (typeof b.id === 'string') out.add(b.id)
+    if (Array.isArray(b.children)) blockIds(b.children, out)
+  }
+  return out
 }
 
 // ------------------------------------------------------------- writing
@@ -273,10 +408,10 @@ function inlineFrom(nodes: PhrasingContent[], styles: Styles = {}): Inline[] {
 }
 
 /** A list item's own line: its first paragraph; everything after it nests under it. */
-function itemParts(nodes: RootContent[], origin: string): { content: Inline[]; children: Block[] } {
+function itemParts(nodes: RootContent[], cx: ParseContext): { content: Inline[]; children: Block[] } {
   const [first, ...rest] = nodes
-  if (first?.type === 'paragraph') return { content: inlineFrom(first.children), children: blocksFrom(rest, origin) }
-  return { content: [], children: blocksFrom(nodes, origin) }
+  if (first?.type === 'paragraph') return { content: inlineFrom(first.children), children: blocksFrom(rest, cx) }
+  return { content: [], children: blocksFrom(nodes, cx) }
 }
 
 function tableFrom(node: Table): Block {
@@ -288,7 +423,18 @@ function tableFrom(node: Table): Block {
   })
 }
 
-function blocksFrom(nodes: RootContent[], origin: string): Block[] {
+/** `keep`: blocks of the page being rewritten, by id, for keep markers. */
+type ParseContext = { origin: string; keep?: Map<string, LooseBlock>; used: Set<string> }
+
+/** A copy of a block with fresh ids throughout (a kept block used twice). */
+const withFreshIds = (b: LooseBlock): LooseBlock => ({
+  ...b,
+  id: randomUUID(),
+  children: Array.isArray(b.children) ? (b.children as LooseBlock[]).map(withFreshIds) : [],
+})
+
+function blocksFrom(nodes: RootContent[], cx: ParseContext): Block[] {
+  const { origin } = cx
   const out: Block[] = []
   for (const node of nodes) {
     switch (node.type) {
@@ -309,7 +455,7 @@ function blocksFrom(nodes: RootContent[], origin: string): Block[] {
       }
       case 'list':
         for (const item of node.children) {
-          const { content, children } = itemParts(item.children, origin)
+          const { content, children } = itemParts(item.children, cx)
           if (typeof item.checked === 'boolean') out.push(block('checkListItem', { props: { checked: item.checked }, content, children }))
           else out.push(block(node.ordered ? 'numberedListItem' : 'bulletListItem', { content, children }))
         }
@@ -321,7 +467,7 @@ function blocksFrom(nodes: RootContent[], origin: string): Block[] {
           if (i) content.push({ type: 'text', text: '\n', styles: {} })
           content.push(...inlineFrom(p.children))
         })
-        out.push(block('quote', { content, children: blocksFrom(node.children.filter((c) => c.type !== 'paragraph'), origin) }))
+        out.push(block('quote', { content, children: blocksFrom(node.children.filter((c) => c.type !== 'paragraph'), cx) }))
         break
       }
       case 'code':
@@ -333,20 +479,60 @@ function blocksFrom(nodes: RootContent[], origin: string): Block[] {
       case 'table':
         out.push(tableFrom(node))
         break
-      case 'html':
-        out.push(block('paragraph', { content: [{ type: 'text', text: node.value, styles: {} }] }))
+      case 'html': {
+        const ref = node.value.trim().match(KEEP_REF)?.[1]
+        if (ref) {
+          const kept = cx.keep?.get(ref)
+          if (!kept) throw new Error(`找不到 keep:${ref} 這個區塊：保留記號只能用在讀出它的那一頁，而且要原樣保留`)
+          out.push((cx.used.has(ref) ? withFreshIds(kept) : kept) as Block)
+          cx.used.add(ref)
+        } else out.push(block('paragraph', { content: [{ type: 'text', text: node.value, styles: {} }] }))
         break
+      }
       default:
-        if ('children' in node) out.push(...blocksFrom((node as { children: RootContent[] }).children, origin))
+        if ('children' in node) out.push(...blocksFrom((node as { children: RootContent[] }).children, cx))
     }
   }
   return out
 }
 
-/** Markdown as editor blocks (every block with a fresh id, as the editor's own have). */
-export async function markdownToBlocks(markdown: string, origin: string): Promise<unknown[]> {
-  const text = markdown.replace(/\r\n?/g, '\n').trim()
+const parse = (text: string) => fromMarkdown(text, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] }) as Nodes & { children: RootContent[] }
+
+/**
+ * Replaces each keep-marker pair with a one-line reference (its text between
+ * the markers is only for reading) and drops block markers.
+ */
+function resolveMarkers(text: string): string {
+  const lines = text.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const open = lines[i].match(KEEP_OPEN)
+    if (open) {
+      const end = lines.findIndex((l, j) => j > i && KEEP_CLOSE.test(l))
+      if (end < 0) throw new Error(`keep:${open[2]} 少了結尾的 <!-- /keep -->`)
+      out.push('', `${open[1]}<!-- keepref:${open[2]} -->`, '')
+      i = end
+    } else if (KEEP_CLOSE.test(lines[i])) {
+      throw new Error('多了一行 <!-- /keep -->，前面沒有對應的 <!-- keep:… -->')
+    } else if (!BLOCK_MARK.test(lines[i])) out.push(lines[i])
+  }
+  return out.join('\n')
+}
+
+/**
+ * Markdown as editor blocks (every block with a fresh id, as the editor's own
+ * have). With `keep` (the page's current top-level blocks by id), keep markers
+ * bring those blocks back as they are.
+ */
+export async function markdownToBlocks(markdown: string, origin: string, keep?: Map<string, LooseBlock>): Promise<unknown[]> {
+  const text = resolveMarkers(markdown.replace(/\r\n?/g, '\n')).trim()
   if (!text) return []
-  const tree = fromMarkdown(text, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] }) as Nodes & { children: RootContent[] }
-  return blocksFrom(tree.children, origin)
+  return blocksFrom(parse(text).children, { origin, keep, used: new Set() })
+}
+
+/** A document's top-level blocks by id, for markdownToBlocks' keep markers. */
+export function keepMap(blocks: unknown): Map<string, LooseBlock> {
+  const map = new Map<string, LooseBlock>()
+  for (const b of (Array.isArray(blocks) ? blocks : []) as LooseBlock[]) if (typeof b.id === 'string') map.set(b.id, b)
+  return map
 }

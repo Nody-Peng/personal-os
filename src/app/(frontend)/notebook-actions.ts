@@ -32,9 +32,13 @@ import {
   movePageTo,
   patchBoardItem,
   SNAPSHOTS_KEPT,
+  restoreTrashedPage,
+  trashBatch,
+  trashedPages,
   trashPageTree,
   treeOf,
   writePageContent,
+  type TrashItem,
   type ItemPatch,
 } from '@/lib/notebookOps'
 import { toNotebookItem } from '@/lib/notebookQueries'
@@ -363,7 +367,7 @@ export async function trashPage(id: number): Promise<ActionResult<number[]>> {
   }
 }
 
-export type TrashItem = { id: number; title: string; icon: string; deletedAt: string; childCount: number }
+export type { TrashItem }
 
 /** Pages trashed on their own (not along with a trashed parent), newest first. */
 export async function listTrash(notebookId: number): Promise<ActionResult<TrashItem[]>> {
@@ -379,86 +383,20 @@ export async function listTrash(notebookId: number): Promise<ActionResult<TrashI
       user,
       overrideAccess: false,
     })
-
-    const all = await treeOf(session, notebook, true)
-    const byId = new Map(all.map((p) => [p.id, p]))
-    const trashed = all.filter((p) => p.deletedAt)
-    const sameBatch = (a?: string | null, b?: string | null) => Boolean(a && b && Date.parse(a) === Date.parse(b))
-    const items = trashed
-      .filter((p) => !sameBatch(byId.get(idOf(p.parent) ?? -1)?.deletedAt, p.deletedAt))
-      .map((p) => ({
-        id: p.id,
-        title: p.title ?? '',
-        icon: p.icon ?? '',
-        deletedAt: p.deletedAt!,
-        childCount: trashBatch(trashed, p.id, p.deletedAt!).length - 1,
-      }))
-      .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
-    return { ok: true, data: items }
+    return { ok: true, data: await trashedPages(session, notebook) }
   } catch (error) {
     return fail(error)
   }
-}
-
-type TrashedNode = Parameters<typeof toPageNode>[0] & { id: number; deletedAt?: string | null }
-
-/**
- * A trashed page and what was trashed together with it (one shared
- * `deletedAt`). Pages under it that were trashed earlier on their own are
- * separate entries in the trash and are left alone.
- */
-function trashBatch(all: TrashedNode[], pageId: number, deletedAt: string): number[] {
-  const stamp = Date.parse(deletedAt)
-  const byId = new Map(all.map((p) => [p.id, p]))
-  return subtreeIds(all.map(toPageNode), pageId).filter((pid) => {
-    const d = byId.get(pid)?.deletedAt
-    return d != null && Date.parse(d) === stamp
-  })
 }
 
 /** Restores a trashed page with whatever was trashed along with it. */
 export async function restorePage(id: number): Promise<ActionResult<PageNode[]>> {
   try {
     const session = await requireActionSession()
-    const { payload, user } = session
-    const pageId = asId(id)
-    const page = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, trash: true, user, overrideAccess: false })
-    if (!page.deletedAt) throw new Error('這一頁不在垃圾桶裡')
-    const all = await treeOf(session, idOf(page.notebook)!, true)
-    const batch = new Set(trashBatch(all, pageId, page.deletedAt))
-    const ids = [...batch]
-
-    // If its parent is still in the trash, bring it back at the top level. A
-    // card whose board is gone comes back as an ordinary page, or nothing
-    // would ever show it.
-    const parent = all.find((p) => p.id === idOf(page.parent))
-    const parentGone = !parent || Boolean(parent.deletedAt)
-    const live = all.filter((p) => !p.deletedAt).map(toPageNode)
-    const newParent = parentGone ? null : parent.id
-    const siblings = childrenOf(live, newParent).filter((p) => p.kind !== 'item')
-    const orphanCard = page.kind === 'item' && parentGone
-
-    await payload.update({
-      collection: 'note-pages',
-      where: { id: { in: ids } },
-      data: { deletedAt: null },
-      trash: true,
-      user,
-      overrideAccess: false,
-    })
-    const position = siblings.length ? siblings[siblings.length - 1].position + 1 : 0
-    if (page.kind !== 'item' || orphanCard) {
-      await payload.update({
-        collection: 'note-pages',
-        id: pageId,
-        data: { parent: newParent, position, ...(orphanCard ? { kind: 'page' as const, parentItem: null } : {}) },
-        user,
-        overrideAccess: false,
-      })
-    }
-
+    const { notebookId, ids } = await restoreTrashedPage(session, id)
+    const batch = new Set(ids)
     // Cards are reached through their board, never the sidebar tree.
-    const restored = await treeOf(session, idOf(page.notebook)!)
+    const restored = await treeOf(session, notebookId)
     refreshShelf()
     return { ok: true, data: restored.filter((p) => batch.has(p.id) && p.kind !== 'item').map(toPageNode) }
   } catch (error) {

@@ -1,5 +1,6 @@
 import type { CollectionConfig } from 'payload'
 import { authenticated } from '@/access/authenticated'
+import { MCP_KEY_LEVELS } from '@/lib/options'
 
 // Keys for the MCP endpoint (/api/mcp), issued and revoked on /studio
 // (lib/mcpKeys.ts). Only a SHA-256 hash of each key is stored, and nobody can
@@ -38,6 +39,14 @@ export const McpKeys: CollectionConfig = {
       required: true,
       access: { update: () => false },
       admin: { readOnly: true },
+    },
+    {
+      name: 'level',
+      label: '權限',
+      type: 'select',
+      required: true,
+      defaultValue: 'add',
+      options: MCP_KEY_LEVELS.map(({ value, label }) => ({ value, label })),
     },
     { name: 'expiresAt', label: '到期', type: 'date', access: { update: () => false }, admin: { readOnly: true } },
     { name: 'lastUsedAt', label: '最後使用', type: 'date', admin: { readOnly: true } },

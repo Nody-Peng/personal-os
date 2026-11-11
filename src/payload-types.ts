@@ -82,6 +82,7 @@ export interface Config {
     'toefl-scores': ToeflScore;
     ideas: Idea;
     'mcp-keys': McpKey;
+    'mcp-activity': McpActivity;
     users: User;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
@@ -105,6 +106,7 @@ export interface Config {
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
     'mcp-keys': McpKeysSelect<false> | McpKeysSelect<true>;
+    'mcp-activity': McpActivitySelect<false> | McpActivitySelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -589,6 +591,7 @@ export interface McpKey {
   prefix: string;
   hash: string;
   user: number | User;
+  level: 'read' | 'add' | 'edit' | 'full';
   expiresAt?: string | null;
   lastUsedAt?: string | null;
   revokedAt?: string | null;
@@ -620,6 +623,31 @@ export interface User {
     | null;
   password?: string | null;
   collection: 'users';
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mcp-activity".
+ */
+export interface McpActivity {
+  id: number;
+  /**
+   * 空白＝Vercel 上的 MCP_TOKEN
+   */
+  key?: (number | null) | McpKey;
+  keyName: string;
+  tool: string;
+  pageId?: number | null;
+  notebookId?: number | null;
+  pageTitle?: string | null;
+  summary?: string | null;
+  /**
+   * 版本紀錄（page-snapshots）的 id
+   */
+  snapshotId?: number | null;
+  emptyBefore?: boolean | null;
+  undoneAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -704,6 +732,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'mcp-keys';
         value: number | McpKey;
+      } | null)
+    | ({
+        relationTo: 'mcp-activity';
+        value: number | McpActivity;
       } | null)
     | ({
         relationTo: 'users';
@@ -998,9 +1030,28 @@ export interface McpKeysSelect<T extends boolean = true> {
   prefix?: T;
   hash?: T;
   user?: T;
+  level?: T;
   expiresAt?: T;
   lastUsedAt?: T;
   revokedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mcp-activity_select".
+ */
+export interface McpActivitySelect<T extends boolean = true> {
+  key?: T;
+  keyName?: T;
+  tool?: T;
+  pageId?: T;
+  notebookId?: T;
+  pageTitle?: T;
+  summary?: T;
+  snapshotId?: T;
+  emptyBefore?: T;
+  undoneAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
