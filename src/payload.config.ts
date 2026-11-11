@@ -14,6 +14,7 @@ import { DailyLogs } from './collections/DailyLogs'
 import { Habits } from './collections/Habits'
 import { Ideas } from './collections/Ideas'
 import { Journals } from './collections/Journals'
+import { McpKeys } from './collections/McpKeys'
 import { MAX_UPLOAD_BYTES, Media } from './collections/Media'
 import { MonthlyNotes } from './collections/MonthlyNotes'
 import { NotePages } from './collections/NotePages'
@@ -111,7 +112,7 @@ export default buildConfig({
     fallbackLanguage: 'zh-TW',
     supportedLanguages: { 'zh-TW': zhTw, en },
   },
-  collections: [DailyLogs, Tasks, Habits, WeeklyReviews, MonthlyNotes, Journals, Notebooks, NotePages, PageSnapshots, Media, Books, BookShelves, ToeflScores, Ideas, Users],
+  collections: [DailyLogs, Tasks, Habits, WeeklyReviews, MonthlyNotes, Journals, Notebooks, NotePages, PageSnapshots, Media, Books, BookShelves, ToeflScores, Ideas, McpKeys, Users],
   globals: [Settings],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',

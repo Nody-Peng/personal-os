@@ -81,6 +81,7 @@ export interface Config {
     'book-shelves': BookShelf;
     'toefl-scores': ToeflScore;
     ideas: Idea;
+    'mcp-keys': McpKey;
     users: User;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
@@ -103,6 +104,7 @@ export interface Config {
     'book-shelves': BookShelvesSelect<false> | BookShelvesSelect<true>;
     'toefl-scores': ToeflScoresSelect<false> | ToeflScoresSelect<true>;
     ideas: IdeasSelect<false> | IdeasSelect<true>;
+    'mcp-keys': McpKeysSelect<false> | McpKeysSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
@@ -576,6 +578,25 @@ export interface ToeflScore {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mcp-keys".
+ */
+export interface McpKey {
+  id: number;
+  name: string;
+  /**
+   * 金鑰的前幾個字，用來辨認
+   */
+  prefix: string;
+  hash: string;
+  user: number | User;
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  revokedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "users".
  */
 export interface User {
@@ -679,6 +700,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'ideas';
         value: number | Idea;
+      } | null)
+    | ({
+        relationTo: 'mcp-keys';
+        value: number | McpKey;
       } | null)
     | ({
         relationTo: 'users';
@@ -961,6 +986,21 @@ export interface IdeasSelect<T extends boolean = true> {
   scorePassion?: T;
   total?: T;
   status?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "mcp-keys_select".
+ */
+export interface McpKeysSelect<T extends boolean = true> {
+  name?: T;
+  prefix?: T;
+  hash?: T;
+  user?: T;
+  expiresAt?: T;
+  lastUsedAt?: T;
+  revokedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

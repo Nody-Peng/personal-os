@@ -16,6 +16,7 @@ import * as migration_20261011_145911_notebook_last_page from './20261011_145911
 import * as migration_20261025_050100_channel_checklist from './20261025_050100_channel_checklist';
 import * as migration_20261028_144958_page_content_rev from './20261028_144958_page_content_rev';
 import * as migration_20261101_132227_remove_channel from './20261101_132227_remove_channel';
+import * as migration_20261111_060454_mcp_keys from './20261111_060454_mcp_keys';
 
 export const migrations = [
   {
@@ -106,6 +107,11 @@ export const migrations = [
   {
     up: migration_20261101_132227_remove_channel.up,
     down: migration_20261101_132227_remove_channel.down,
-    name: '20261101_132227_remove_channel'
+    name: '20261101_132227_remove_channel',
+  },
+  {
+    up: migration_20261111_060454_mcp_keys.up,
+    down: migration_20261111_060454_mcp_keys.down,
+    name: '20261111_060454_mcp_keys'
   },
 ];
