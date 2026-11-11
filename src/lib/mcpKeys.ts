@@ -2,12 +2,15 @@ import 'server-only'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Payload } from 'payload'
 import type { McpKey, User } from '@/payload-types'
+import type { McpActor } from './mcpActivity'
+import { MCP_KEY_LEVELS, type McpKeyLevel } from './options'
 import type { Session } from './session'
 
 // Keys for the MCP endpoint, issued on /studio. A key is "pos_" plus 32 random
 // bytes; only its SHA-256 hash is stored (a key this random needs no slow
 // hash), so a key shown once can't be recovered from the database. Requests
-// carry it as "Authorization: Bearer <key>" and act as the account that made it.
+// carry it as "Authorization: Bearer <key>" and act as the account that made it,
+// with only the tools its level allows (lib/mcp/tools.ts, TOOL_LEVELS).
 
 export const KEY_PREFIX = 'pos_'
 export const MAX_ACTIVE_KEYS = 20
@@ -15,6 +18,9 @@ export const KEY_NAME_MAX = 60
 /** Choices for a new key's lifetime; null = never expires. */
 export const KEY_LIFETIMES = [null, 30, 90, 365] as const
 export type KeyLifetime = (typeof KEY_LIFETIMES)[number]
+export const DEFAULT_KEY_LEVEL: McpKeyLevel = 'add'
+
+export const isKeyLevel = (value: unknown): value is McpKeyLevel => MCP_KEY_LEVELS.some((l) => l.value === value)
 
 /** lastUsedAt is written at most this often, so busy clients don't write on every call. */
 const LAST_USED_EVERY_MS = 10 * 60_000
@@ -31,10 +37,16 @@ export function keyState(key: Pick<McpKey, 'revokedAt' | 'expiresAt'>, now = Dat
 }
 
 /** Makes a key for the session's account. The key itself is returned only here. */
-export async function issueKey({ payload, user }: Session, name: string, lifetime: KeyLifetime): Promise<{ id: number; key: string }> {
+export async function issueKey(
+  { payload, user }: Session,
+  name: string,
+  lifetime: KeyLifetime,
+  level: McpKeyLevel = DEFAULT_KEY_LEVEL,
+): Promise<{ id: number; key: string }> {
   const cleanName = String(name ?? '').trim().slice(0, KEY_NAME_MAX)
   if (!cleanName) throw new Error('請替金鑰取個名字，例如用在哪裡')
   if (!KEY_LIFETIMES.includes(lifetime)) throw new Error('期限只能選不過期、30、90 或 365 天')
+  if (!isKeyLevel(level)) throw new Error('權限只能選唯讀、可新增、可編輯或完整')
   const { totalDocs } = await payload.count({
     collection: 'mcp-keys',
     where: {
@@ -56,12 +68,18 @@ export async function issueKey({ payload, user }: Session, name: string, lifetim
       prefix: key.slice(0, KEY_PREFIX.length + 8),
       hash: hashKey(key),
       user: user.id,
+      level,
       expiresAt: lifetime ? new Date(Date.now() + lifetime * 86_400_000).toISOString() : null,
     },
     user,
     overrideAccess: false,
   })
   return { id: doc.id, key }
+}
+
+export async function setKeyLevel({ payload, user }: Session, id: number, level: McpKeyLevel): Promise<void> {
+  if (!isKeyLevel(level)) throw new Error('權限只能選唯讀、可新增、可編輯或完整')
+  await payload.update({ collection: 'mcp-keys', id, data: { level }, user, overrideAccess: false })
 }
 
 export async function revokeKey({ payload, user }: Session, id: number): Promise<void> {
@@ -76,10 +94,11 @@ export async function deleteKey({ payload, user }: Session, id: number): Promise
 }
 
 /**
- * The account an Authorization header's key acts as, or null when the header
- * holds no live key. Runs before anyone is known, hence overrideAccess.
+ * The account an Authorization header's key acts as, and who is calling (the
+ * key and its level), or null when the header holds no live key. Runs before
+ * anyone is known, hence overrideAccess.
  */
-export async function sessionForBearer(payload: Payload, header: string | null): Promise<Session | null> {
+export async function sessionForBearer(payload: Payload, header: string | null): Promise<{ session: Session; actor: McpActor } | null> {
   const key = KEY_PATTERN.exec(header ?? '')?.[1]
   if (!key) return null
   const { docs } = await payload.find({
@@ -99,5 +118,8 @@ export async function sessionForBearer(payload: Payload, header: string | null):
       .update({ collection: 'mcp-keys', id: found.id, data: { lastUsedAt: new Date().toISOString() }, depth: 0, overrideAccess: true })
       .catch(() => null)
   }
-  return { payload, user: { ...user, collection: 'users' } as User }
+  return {
+    session: { payload, user: { ...user, collection: 'users' } as User },
+    actor: { keyId: found.id, name: found.name, level: isKeyLevel(found.level) ? found.level : DEFAULT_KEY_LEVEL },
+  }
 }

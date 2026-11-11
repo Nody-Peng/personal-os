@@ -104,8 +104,12 @@ export async function createPageIn(
 const SNAPSHOT_EVERY = 10 * 60_000
 export const SNAPSHOTS_KEPT = 50
 
-/** Keeps the page's current title and content as a snapshot (`force`: whatever the newest one's age). */
-export async function keepSnapshot({ payload, user }: Session, pageId: number, force = false) {
+/**
+ * Keeps the page's current title and content as a snapshot (`force`: whatever
+ * the newest one's age). Returns the new snapshot's id, or null when none was
+ * needed (a recent one exists, or the page is empty).
+ */
+export async function keepSnapshot({ payload, user }: Session, pageId: number, force = false): Promise<number | null> {
   const newest = await payload.find({
     collection: 'page-snapshots',
     where: { page: { equals: pageId } },
@@ -116,18 +120,20 @@ export async function keepSnapshot({ payload, user }: Session, pageId: number, f
     user,
     overrideAccess: false,
   })
-  if (!force && newest.docs[0] && Date.now() - Date.parse(newest.docs[0].createdAt) < SNAPSHOT_EVERY) return
+  if (!force && newest.docs[0] && Date.now() - Date.parse(newest.docs[0].createdAt) < SNAPSHOT_EVERY) return null
   const page = await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, select: { title: true, content: true }, user, overrideAccess: false })
-  if (isBlankDocument(page.content)) return
-  await payload.create({ collection: 'page-snapshots', data: { page: pageId, title: page.title ?? '', content: page.content }, user, overrideAccess: false })
+  if (isBlankDocument(page.content)) return null
+  const snapshot = await payload.create({ collection: 'page-snapshots', data: { page: pageId, title: page.title ?? '', content: page.content }, user, overrideAccess: false })
   const surplus = newest.docs.slice(SNAPSHOTS_KEPT - 1).map((s) => s.id)
   if (surplus.length) {
     await payload.delete({ collection: 'page-snapshots', where: { id: { in: surplus } }, user, overrideAccess: false })
   }
+  return snapshot.id
 }
 
 export type ContentWrite =
-  | { ok: true; rev: number; savedAt: number }
+  /** `snapshotId`: the version history entry holding what this save replaced, if one was made. */
+  | { ok: true; rev: number; savedAt: number; snapshotId: number | null }
   /** Someone else saved since `baseRev`: nothing was written; here is what is there now. */
   | { ok: false; rev: number; content: unknown[] | null }
 
@@ -151,7 +157,7 @@ export async function writePageContent(
     const rev = Number(current.contentRev) || 0
     if (rev !== opts.baseRev) return { ok: false, rev, content: Array.isArray(current.content) ? current.content : null }
   }
-  await keepSnapshot(session, id, opts.forceSnapshot)
+  const snapshotId = await keepSnapshot(session, id, opts.forceSnapshot)
   const doc = await payload.update({
     collection: 'note-pages',
     id,
@@ -160,7 +166,36 @@ export async function writePageContent(
     user,
     overrideAccess: false,
   })
-  return { ok: true, rev: Number(doc.contentRev) || 0, savedAt: Date.now() }
+  return { ok: true, rev: Number(doc.contentRev) || 0, savedAt: Date.now(), snapshotId }
+}
+
+/** A page's version history, newest first. */
+export async function pageVersions({ payload, user }: Session, pageId: number) {
+  const { docs } = await payload.find({
+    collection: 'page-snapshots',
+    where: { page: { equals: asId(pageId) } },
+    sort: '-createdAt',
+    limit: SNAPSHOTS_KEPT,
+    depth: 0,
+    user,
+    overrideAccess: false,
+  })
+  return docs
+}
+
+/** One version of a page (it must belong to that page). */
+export async function pageVersion({ payload, user }: Session, pageId: number, versionId: number) {
+  const snapshot = await payload.findByID({ collection: 'page-snapshots', id: asId(versionId), depth: 0, user, overrideAccess: false }).catch(() => null)
+  if (!snapshot || idOf(snapshot.page) !== asId(pageId)) throw new Error('這一頁沒有這個版本（可能已經被清掉了）')
+  return snapshot
+}
+
+/** Puts an old version's content back; what was there goes into the history first. */
+export async function restorePageVersion(session: Session, pageId: number, versionId: number) {
+  const snapshot = await pageVersion(session, pageId, versionId)
+  const result = await writePageContent(session, pageId, Array.isArray(snapshot.content) ? snapshot.content : [], { forceSnapshot: true })
+  if (!result.ok) throw new Error('還原失敗，請再試一次')
+  return { snapshot, ...result }
 }
 
 /** Moves a page under `parentId` (null = top level) at `index` among its new siblings. */
@@ -187,6 +222,83 @@ export async function movePageTo(session: Session, pageId: number, parentId: num
       overrideAccess: false,
     })
   }
+}
+
+type TrashedNode = Parameters<typeof toPageNode>[0] & { id: number; deletedAt?: string | null }
+
+/**
+ * A trashed page and what was trashed together with it (one shared
+ * `deletedAt`). Pages under it that were trashed earlier on their own are
+ * separate entries in the trash and are left alone.
+ */
+export function trashBatch(all: TrashedNode[], pageId: number, deletedAt: string): number[] {
+  const stamp = Date.parse(deletedAt)
+  const byId = new Map(all.map((p) => [p.id, p]))
+  return subtreeIds(all.map(toPageNode), pageId).filter((pid) => {
+    const d = byId.get(pid)?.deletedAt
+    return d != null && Date.parse(d) === stamp
+  })
+}
+
+export type TrashItem = { id: number; title: string; icon: string; deletedAt: string; childCount: number }
+
+/** A notebook's trash: pages trashed on their own (not along with a trashed parent), newest first. */
+export async function trashedPages(session: Session, notebookId: number): Promise<TrashItem[]> {
+  const all = await treeOf(session, asId(notebookId), true)
+  const byId = new Map(all.map((p) => [p.id, p]))
+  const trashed = all.filter((p) => p.deletedAt)
+  const sameBatch = (a?: string | null, b?: string | null) => Boolean(a && b && Date.parse(a) === Date.parse(b))
+  return trashed
+    .filter((p) => !sameBatch(byId.get(idOf(p.parent) ?? -1)?.deletedAt, p.deletedAt))
+    .map((p) => ({
+      id: p.id,
+      title: p.title ?? '',
+      icon: p.icon ?? '',
+      deletedAt: p.deletedAt!,
+      childCount: trashBatch(trashed, p.id, p.deletedAt!).length - 1,
+    }))
+    .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
+}
+
+/** Restores a trashed page with whatever was trashed along with it; returns the restored ids. */
+export async function restoreTrashedPage(session: Session, pageId: number): Promise<{ notebookId: number; ids: number[] }> {
+  const { payload, user } = session
+  const id = asId(pageId)
+  const page = await payload.findByID({ collection: 'note-pages', id, depth: 0, trash: true, user, overrideAccess: false })
+  if (!page.deletedAt) throw new Error('這一頁不在垃圾桶裡')
+  const notebookId = idOf(page.notebook)!
+  const all = await treeOf(session, notebookId, true)
+  const ids = trashBatch(all, id, page.deletedAt)
+
+  // If its parent is still in the trash, bring it back at the top level. A
+  // card whose board is gone comes back as an ordinary page, or nothing
+  // would ever show it.
+  const parent = all.find((p) => p.id === idOf(page.parent))
+  const parentGone = !parent || Boolean(parent.deletedAt)
+  const live = all.filter((p) => !p.deletedAt).map(toPageNode)
+  const newParent = parentGone ? null : parent.id
+  const siblings = childrenOf(live, newParent).filter((p) => p.kind !== 'item')
+  const orphanCard = page.kind === 'item' && parentGone
+
+  await payload.update({
+    collection: 'note-pages',
+    where: { id: { in: ids } },
+    data: { deletedAt: null },
+    trash: true,
+    user,
+    overrideAccess: false,
+  })
+  const position = siblings.length ? siblings[siblings.length - 1].position + 1 : 0
+  if (page.kind !== 'item' || orphanCard) {
+    await payload.update({
+      collection: 'note-pages',
+      id,
+      data: { parent: newParent, position, ...(orphanCard ? { kind: 'page' as const, parentItem: null } : {}) },
+      user,
+      overrideAccess: false,
+    })
+  }
+  return { notebookId, ids }
 }
 
 /** Moves a page and everything under it to the trash; returns the ids trashed. */

@@ -17,6 +17,7 @@ import * as migration_20261025_050100_channel_checklist from './20261025_050100_
 import * as migration_20261028_144958_page_content_rev from './20261028_144958_page_content_rev';
 import * as migration_20261101_132227_remove_channel from './20261101_132227_remove_channel';
 import * as migration_20261111_060454_mcp_keys from './20261111_060454_mcp_keys';
+import * as migration_20261111_064843_mcp_levels_activity from './20261111_064843_mcp_levels_activity';
 
 export const migrations = [
   {
@@ -112,6 +113,11 @@ export const migrations = [
   {
     up: migration_20261111_060454_mcp_keys.up,
     down: migration_20261111_060454_mcp_keys.down,
-    name: '20261111_060454_mcp_keys'
+    name: '20261111_060454_mcp_keys',
+  },
+  {
+    up: migration_20261111_064843_mcp_levels_activity.up,
+    down: migration_20261111_064843_mcp_levels_activity.down,
+    name: '20261111_064843_mcp_levels_activity'
   },
 ];

@@ -104,3 +104,12 @@ export const ITEM_STATUSES = [
   { label: '封存', value: 'archived', tone: 'gray' },
 ] as const
 export type ItemStatus = (typeof ITEM_STATUSES)[number]['value']
+
+/** What an MCP key may do (/studio); each level includes the ones before it. */
+export const MCP_KEY_LEVELS = [
+  { value: 'read', label: '唯讀', hint: '只能讀筆記本、日記、書摘、版本紀錄與垃圾桶' },
+  { value: 'add', label: '可新增', hint: '再加上新增頁面、在頁尾或段落間加內容、新增卡片與待辦、上傳圖片、寄信給你' },
+  { value: 'edit', label: '可編輯', hint: '再加上改頁名與圖示、搬移頁面、改卡片、改或刪某一段、還原版本與救回垃圾桶' },
+  { value: 'full', label: '完整', hint: '再加上整頁改寫與移到垃圾桶' },
+] as const
+export type McpKeyLevel = (typeof MCP_KEY_LEVELS)[number]['value']

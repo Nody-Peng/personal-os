@@ -9,7 +9,8 @@ import config from '@/payload.config'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mergeBlocks } from '@/lib/blockMerge'
 import { blocksToMarkdown, markdownToBlocks, pageIdFromUrl } from '@/lib/mcp/markdown'
-import { createMcpServer } from '@/lib/mcp/tools'
+import { createMcpServer, TOOL_LEVELS } from '@/lib/mcp/tools'
+import { undoActivity, type McpActor } from '@/lib/mcpActivity'
 import { writePageContent } from '@/lib/notebookOps'
 import type { Session } from '@/lib/session'
 import type { User } from '@/payload-types'
@@ -118,6 +119,7 @@ describe('MCP tools', () => {
   let client: Client
   let notebookId: number
   const userIds: number[] = []
+  const startedAt = new Date().toISOString()
 
   const call = async (name: string, args: Record<string, unknown> = {}) => {
     const result = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean }
@@ -149,6 +151,7 @@ describe('MCP tools', () => {
   afterAll(async () => {
     await client?.close()
     if (!payload) return
+    await payload.delete({ collection: 'mcp-activity', where: { createdAt: { greater_than: startedAt } } })
     if (notebookId) {
       await payload.delete({ collection: 'note-pages', where: { notebook: { equals: notebookId } }, trash: true })
       await payload.delete({ collection: 'notebooks', id: notebookId })
@@ -301,6 +304,158 @@ describe('MCP tools', () => {
       sent.mockRestore()
       vi.unstubAllEnvs()
     }
+  })
+
+  // ------------------------------------------------- keep markers, blocks
+
+  const text = (t: string) => [{ type: 'text', text: t, styles: {} }]
+  const plainProps = { textColor: 'default', backgroundColor: 'default', textAlignment: 'left' }
+  const richPage = async (title: string) => {
+    const pageId = Number((await call('create_page', { notebook_id: notebookId, title })).text.match(/\[(\d+)\]/)?.[1])
+    const blocks = [
+      { id: 'b-p', type: 'paragraph', props: plainProps, content: text('普通段落 '), children: [] },
+      { id: 'b-board', type: 'board', props: { boardId: pageId }, children: [] },
+      { id: 'b-callout', type: 'callout', props: { emoji: '💡', ...plainProps }, content: text('提醒'), children: [] },
+      {
+        id: 'b-toggle',
+        type: 'toggleListItem',
+        props: plainProps,
+        content: text('問題'),
+        children: [{ id: 'b-answer', type: 'paragraph', props: plainProps, content: text('答案'), children: [] }],
+      },
+      { id: 'b-red', type: 'paragraph', props: { ...plainProps, textColor: 'red' }, content: text('紅字'), children: [] },
+      { id: 'b-list', type: 'bulletListItem', props: plainProps, content: text('項目'), children: [] },
+    ]
+    await writePageContent(session, pageId, blocks)
+    return { pageId, blocks }
+  }
+  const stored = async (pageId: number) =>
+    (await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0 })).content as { id: string; type: string; content?: { text: string }[] }[]
+  const bodyOf = (read: string) => read.slice(read.indexOf('\n---\n') + 5).trim()
+
+  it('keeps blocks Markdown cannot hold through a rewrite', async () => {
+    const { pageId, blocks } = await richPage('保留測試')
+    const read = (await call('read_page', { page_id: pageId })).text
+    for (const [bid, label] of [['b-board', '看板'], ['b-callout', '提示框'], ['b-toggle', '摺疊清單'], ['b-red', '含顏色或排版的段落']]) {
+      expect(read).toContain(`<!-- keep:${bid} ${label} -->`)
+    }
+    expect(read).not.toContain('keep:b-p')
+    expect(read).not.toContain('keep:b-list')
+    expect(read).toContain('有 4 個區塊')
+
+    // Rewriting with the markers left alone changes only what Markdown holds.
+    const rewritten = bodyOf(read).replace('普通段落', '改過的段落')
+    expect((await call('replace_page_content', { page_id: pageId, markdown: rewritten })).isError).toBe(false)
+    const after = await stored(pageId)
+    expect(after.map((b) => b.id).filter((bid) => bid.startsWith('b-') && bid !== 'b-p' && bid !== 'b-list')).toEqual(['b-board', 'b-callout', 'b-toggle', 'b-red'])
+    for (const kept of ['b-board', 'b-callout', 'b-toggle', 'b-red']) expect(after.find((b) => b.id === kept)).toEqual(blocks.find((b) => b.id === kept))
+    expect(JSON.stringify(after)).toContain('改過的段落')
+
+    // Dropping a kept block is refused, and nothing is written…
+    const withoutBoard = bodyOf((await call('read_page', { page_id: pageId })).text).replace(/<!-- keep:b-board[\s\S]*?<!-- \/keep -->/, '')
+    const refused = await call('replace_page_content', { page_id: pageId, markdown: withoutBoard })
+    expect(refused.isError).toBe(true)
+    expect(refused.text).toContain('看板（keep:b-board）')
+    expect((await stored(pageId)).some((b) => b.id === 'b-board')).toBe(true)
+    // …unless it is meant.
+    expect((await call('replace_page_content', { page_id: pageId, markdown: withoutBoard, allow_removing: ['b-board'] })).isError).toBe(false)
+    expect((await stored(pageId)).some((b) => b.id === 'b-board')).toBe(false)
+
+    // A marker can't bring in a block from another page, or be left open.
+    expect((await call('replace_page_content', { page_id: pageId, markdown: '<!-- keep:nope 看板 -->\n\nx\n\n<!-- /keep -->' })).text).toContain('找不到 keep:nope')
+    expect((await call('replace_page_content', { page_id: pageId, markdown: '<!-- keep:b-callout 提示框 -->\n\nx' })).text).toContain('少了結尾')
+  })
+
+  it('edits, inserts and deletes single blocks', async () => {
+    const { pageId } = await richPage('區塊測試')
+    const read = (await call('read_page', { page_id: pageId, block_ids: true })).text
+    expect(read).toContain('<!-- block:b-p -->')
+    expect(read).toContain('<!-- block:b-list -->')
+
+    expect((await call('insert_blocks', { page_id: pageId, after_block_id: 'b-p', markdown: '插進來的' })).isError).toBe(false)
+    let after = await stored(pageId)
+    expect(after[1].content?.[0].text).toBe('插進來的')
+    expect((await call('insert_blocks', { page_id: pageId, markdown: '# 最上面' })).isError).toBe(false)
+    expect((await stored(pageId))[0].type).toBe('heading')
+
+    expect((await call('edit_block', { page_id: pageId, block_id: 'b-p', markdown: '**改好了**' })).isError).toBe(false)
+    expect(JSON.stringify(await stored(pageId))).toContain('改好了')
+
+    const callout = await call('edit_block', { page_id: pageId, block_id: 'b-callout', markdown: '新的提醒' })
+    expect(callout.isError).toBe(true)
+    expect(callout.text).toContain('提示框')
+    expect((await call('edit_block', { page_id: pageId, block_id: 'b-callout', markdown: '新的提醒', accept_format_loss: true })).isError).toBe(false)
+
+    expect((await call('delete_block', { page_id: pageId, block_id: 'b-toggle' })).text).toContain('問題')
+    after = await stored(pageId)
+    expect(after.some((b) => b.id === 'b-toggle')).toBe(false)
+    expect(after.some((b) => b.id === 'b-board')).toBe(true)
+    expect((await call('delete_block', { page_id: pageId, block_id: 'b-toggle' })).text).toContain('找不到區塊')
+  })
+
+  it('lists and restores versions, and brings trashed pages back', async () => {
+    const pageId = Number((await call('create_page', { notebook_id: notebookId, title: '版本測試', markdown: '第一版' })).text.match(/\[(\d+)\]/)?.[1])
+    await call('replace_page_content', { page_id: pageId, markdown: '第二版' })
+    const versions = (await call('list_page_versions', { page_id: pageId })).text
+    expect(versions).toContain('第一版')
+    const versionId = Number(versions.match(/version (\d+)/)?.[1])
+    expect((await call('read_page_version', { page_id: pageId, version_id: versionId })).text).toContain('第一版')
+    expect((await call('restore_page_version', { page_id: pageId, version_id: versionId })).isError).toBe(false)
+    expect((await call('read_page', { page_id: pageId })).text).toContain('第一版')
+    // Restoring kept what was there as a version too.
+    expect((await call('list_page_versions', { page_id: pageId })).text).toContain('第二版')
+    expect((await call('read_page_version', { page_id: pageId, version_id: 999_999_999 })).isError).toBe(true)
+
+    await call('trash_page', { page_id: pageId })
+    expect((await call('list_trash', { notebook_id: notebookId })).text).toContain(`[${pageId}]`)
+    expect((await call('restore_page', { page_id: pageId })).isError).toBe(false)
+    expect((await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0 })).deletedAt).toBeFalsy()
+  })
+
+  it('offers only the tools a level allows', async () => {
+    const toolsFor = async (level: McpActor['level']) => {
+      const server = createMcpServer({ session, origin: ORIGIN, revalidate: () => {}, actor: { keyId: null, name: 'test', level } })
+      const [c, s] = InMemoryTransport.createLinkedPair()
+      await server.connect(s)
+      const other = new Client({ name: 'level-test', version: '1.0.0' })
+      await other.connect(c)
+      const names = (await other.listTools()).tools.map((t) => t.name)
+      await other.close()
+      return new Set(names)
+    }
+    const read = await toolsFor('read')
+    expect(read.has('read_page') && read.has('list_page_versions')).toBe(true)
+    expect(read.has('create_page')).toBe(false)
+    const add = await toolsFor('add')
+    expect(add.has('create_page') && add.has('insert_blocks') && add.has('append_to_page')).toBe(true)
+    expect(add.has('edit_block') || add.has('update_page')).toBe(false)
+    const edit = await toolsFor('edit')
+    expect(edit.has('edit_block') && edit.has('delete_block') && edit.has('restore_page_version') && edit.has('update_page')).toBe(true)
+    expect(edit.has('replace_page_content') || edit.has('trash_page')).toBe(false)
+    expect([...(await toolsFor('full'))].sort()).toEqual(Object.keys(TOOL_LEVELS).sort())
+  })
+
+  it('records every change and can take it back', async () => {
+    const pageId = Number((await call('create_page', { notebook_id: notebookId, title: '紀錄測試', markdown: '原本' })).text.match(/\[(\d+)\]/)?.[1])
+    await call('append_to_page', { page_id: pageId, markdown: 'Claude 加的' })
+    const entries = async (tool: string) =>
+      (await payload.find({ collection: 'mcp-activity', where: { and: [{ pageId: { equals: pageId } }, { tool: { equals: tool } }] }, sort: '-createdAt' })).docs
+    const [append] = await entries('append_to_page')
+    expect(append).toMatchObject({ keyName: 'Claude', pageTitle: '紀錄測試' })
+    expect(append.snapshotId).toBeTruthy()
+
+    expect(await undoActivity(session, append.id)).toContain('還原')
+    expect(JSON.stringify(await stored(pageId))).not.toContain('Claude 加的')
+    await expect(undoActivity(session, append.id)).rejects.toThrow('已經還原過')
+
+    await call('trash_page', { page_id: pageId })
+    const [trash] = await entries('trash_page')
+    await undoActivity(session, trash.id)
+    expect((await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0 })).deletedAt).toBeFalsy()
+
+    const [created] = await entries('create_page')
+    await undoActivity(session, created.id)
+    expect((await payload.findByID({ collection: 'note-pages', id: pageId, depth: 0, trash: true })).deletedAt).toBeTruthy()
   })
 
   it('reports a bad request as a tool error, not a crash', async () => {

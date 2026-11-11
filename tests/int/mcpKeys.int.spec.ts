@@ -43,7 +43,8 @@ describe('MCP keys', () => {
   it('lets a live key in as its account, and nothing else', async () => {
     const { id, key } = await issueKey(session, '連線測試', 30)
     const found = await sessionForBearer(payload, `Bearer ${key}`)
-    expect(found?.user.id).toBe(session.user.id)
+    expect(found?.session.user.id).toBe(session.user.id)
+    expect(found?.actor).toEqual({ keyId: id, name: '連線測試', level: 'add' })
     const used = await payload.findByID({ collection: 'mcp-keys', id, depth: 0, overrideAccess: true })
     expect(used.lastUsedAt).toBeTruthy()
 
