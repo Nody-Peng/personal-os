@@ -1,6 +1,6 @@
 'use client'
 
-import { BookOpenText, Books, DotsThreeCircle, GearSix, Lightbulb, MagnifyingGlass, SignOut, SunHorizon, X } from '@phosphor-icons/react'
+import { BookOpenText, Books, DotsThreeCircle, GearSix, Key, Lightbulb, MagnifyingGlass, SignOut, SunHorizon, X } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -78,6 +78,15 @@ export function AppNav() {
               搜尋
             </button>
             <ThemeCycleButton className="size-8 text-muted" />
+            <Link
+              href="/studio"
+              aria-current={pathname.startsWith('/studio') ? 'page' : undefined}
+              className={`flex items-center gap-1.5 text-sm transition-colors hover:text-ink-strong ${pathname.startsWith('/studio') ? 'text-ink-strong' : 'text-muted'}`}
+              title="MCP 金鑰"
+            >
+              <Key size={18} />
+              Studio
+            </Link>
             <Link href="/admin" className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink-strong">
               <GearSix size={18} />
               後台
@@ -152,6 +161,10 @@ export function AppNav() {
                 <MagnifyingGlass size={20} className="text-muted" />
                 搜尋筆記本和日記
               </button>
+              <Link href="/studio" className="flex h-11 items-center gap-3 rounded-lg px-2 text-ink hover:bg-sunken">
+                <Key size={20} className="text-muted" />
+                Studio（MCP 金鑰）
+              </Link>
               <Link href="/admin" className="flex h-11 items-center gap-3 rounded-lg px-2 text-ink hover:bg-sunken">
                 <GearSix size={20} className="text-muted" />
                 後台
